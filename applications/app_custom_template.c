@@ -41,11 +41,16 @@ static THD_WORKING_AREA(my_thread_wa, 1024);
 
 // Private functions
 static void pwm_callback(void);
-static void terminal_test(int argc, const char **argv);
+static void terminal_set_airspeed(int argc, const char **argv);
+static void terminal_set_torquescale(int argc, const char **argv);
+float mcpwm_foc_get_rpm_faster(void);
+float mcpwm_foc_get_rpm_fast(void);
 
 // Private variables
 static volatile bool stop_now = true;
 static volatile bool is_running = false;
+static float airspeed = 0;
+static float torquescale = 1;
 
 // Called when the custom application is started. Start our
 // threads here and set up callbacks.
@@ -58,17 +63,24 @@ void app_custom_start(void) {
 
 	// Terminal commands for the VESC Tool terminal can be registered.
 	terminal_register_command_callback(
-			"custom_cmd",
-			"Print the number d",
-			"[d]",
-			terminal_test);
+			"airspeed",
+			"set airspeed",
+			"[airspeed]",
+			terminal_set_airspeed);
+
+	terminal_register_command_callback(
+			"torquescale",
+			"set torquescale",
+			"[torquescale]",
+			terminal_set_torquescale);
 }
 
 // Called when the custom application is stopped. Stop our threads
 // and release callbacks.
 void app_custom_stop(void) {
 	mc_interface_set_pwm_callback(0);
-	terminal_unregister_callback(terminal_test);
+	terminal_unregister_callback(terminal_set_airspeed);
+	terminal_unregister_callback(terminal_set_torquescale);
 
 	stop_now = true;
 	while (is_running) {
@@ -87,21 +99,6 @@ static THD_FUNCTION(my_thread, arg) {
 
 	is_running = true;
 
-	// Example of using the experiment plot
-//	chThdSleepMilliseconds(8000);
-//	commands_init_plot("Sample", "Voltage");
-//	commands_plot_add_graph("Temp Fet");
-//	commands_plot_add_graph("Input Voltage");
-//	float samp = 0.0;
-//
-//	for(;;) {
-//		commands_plot_set_graph(0);
-//		commands_send_plot_points(samp, mc_interface_temp_fet_filtered());
-//		commands_plot_set_graph(1);
-//		commands_send_plot_points(samp, GET_INPUT_VOLTAGE());
-//		samp++;
-//		chThdSleepMilliseconds(10);
-//	}
 
 	for(;;) {
 		// Check if it is time to stop.
@@ -112,28 +109,75 @@ static THD_FUNCTION(my_thread, arg) {
 
 		timeout_reset(); // Reset timeout if everything is OK.
 
-		// Run your logic here. A lot of functionality is available in mc_interface.h.
+		const volatile mc_configuration* conf_now = mc_interface_get_configuration();
+		float n_poles = conf_now->si_motor_poles / 2.0;
+		float n = mcpwm_foc_get_rpm_fast()/60/n_poles;
+		float V = airspeed;
+		float D = .66;
+		float rho = 1.225;
+		float lambda = conf_now->foc_motor_flux_linkage;
+		float J, CQ, torque, current;
 
-		chThdSleepMilliseconds(10);
+		current = 0;
+
+		if (n > 0) {
+			J = 0;
+			if (n > 1) {
+				J = V/(n*D);
+			}
+			if (J < 0) {
+				J = 0;
+			}
+			if (J > 1) {
+				J = 1;
+			}
+
+			CQ = 0.0297 + 0.0241*J + -0.0331*J*J + -0.0316*J*J*J;
+			torque = torquescale*CQ * rho * n*n * D*D*D*D*D;
+			current = -torque/(1.5 * lambda * n_poles);
+		}
+
+		mc_interface_set_current(current);
+
+		chThdSleepMicroseconds(100);
 	}
 }
 
 static void pwm_callback(void) {
-	// Called for every control iteration in interrupt context.
+
 }
 
 // Callback function for the terminal command with arguments.
-static void terminal_test(int argc, const char **argv) {
+static void terminal_set_torquescale(int argc, const char **argv) {
 	if (argc == 2) {
-		int d = -1;
-		sscanf(argv[1], "%d", &d);
+		float cmd_torquescale = -1;
+		sscanf(argv[1], "%f", &cmd_torquescale);
 
-		commands_printf("You have entered %d", d);
-
-		// For example, read the ADC inputs on the COMM header.
-		commands_printf("ADC1: %.2f V ADC2: %.2f V",
-				(double)ADC_VOLTS(ADC_IND_EXT), (double)ADC_VOLTS(ADC_IND_EXT2));
+		if (cmd_torquescale >= 0) {
+			torquescale = cmd_torquescale;
+			commands_printf("torquescale set to %f", torquescale);
+		} else {
+			commands_printf("torquescale must be a nonnegative number");
+		}
 	} else {
-		commands_printf("This command requires one argument.\n");
+		commands_printf("torquescale = %f\n", torquescale);
+	}
+}
+
+
+// Callback function for the terminal command with arguments.
+static void terminal_set_airspeed(int argc, const char **argv) {
+	if (argc == 2) {
+		float cmd_airspeed = -1;
+		sscanf(argv[1], "%f", &cmd_airspeed);
+
+		if (cmd_airspeed >= 0) {
+			airspeed = cmd_airspeed;
+			commands_printf("Airspeed set to %f", airspeed);
+		} else {
+			commands_printf("Airspeed must be a nonnegative number");
+		}
+	} else {
+		commands_printf("airspeed = %f\n", airspeed);
 	}
 }
