@@ -2880,55 +2880,12 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 		}
 
 		if (control_duty) {
-			// Duty cycle control
-			if (fabsf(duty_set) < (duty_abs - 0.01) &&
-					(!motor_now->duty_was_pi || SIGN(motor_now->duty_pi_duty_last) == SIGN(duty_now))) {
-				// Truncating the duty cycle here would be dangerous, so run a PI controller.
-
-				motor_now->duty_pi_duty_last = duty_now;
-				motor_now->duty_was_pi = true;
-
-				// Reset the integrator in duty mode to not increase the duty if the load suddenly changes. In braking
-				// mode this would cause a discontinuity, so there we want to keep the value of the integrator.
-				if (motor_now->m_control_mode == CONTROL_MODE_DUTY) {
-					if (duty_now > 0.0) {
-						if (motor_now->m_duty_i_term > 0.0) {
-							motor_now->m_duty_i_term = 0.0;
-						}
-					} else {
-						if (motor_now->m_duty_i_term < 0.0) {
-							motor_now->m_duty_i_term = 0.0;
-						}
-					}
-				}
-
-				// Compute error
-				float error = duty_set - motor_now->m_motor_state.duty_now;
-
-				// Compute parameters
-				float scale = 1.0 / motor_now->m_motor_state.v_bus;
-				float p_term = error * conf_now->foc_duty_dowmramp_kp * scale;
-				motor_now->m_duty_i_term += error * (conf_now->foc_duty_dowmramp_ki * dt) * scale;
-
-				// I-term wind-up protection
-				utils_truncate_number((float*)&motor_now->m_duty_i_term, -1.0, 1.0);
-
-				// Calculate output
-				float output = p_term + motor_now->m_duty_i_term;
-				utils_truncate_number(&output, -1.0, 1.0);
-				iq_set_tmp = output * conf_now->lo_current_max;
-			} else {
-				// If the duty cycle is less than or equal to the set duty cycle just limit
-				// the modulation and use the maximum allowed current.
-				motor_now->m_duty_i_term = motor_now->m_motor_state.iq / conf_now->lo_current_max;
-				motor_now->m_motor_state.max_duty = duty_set;
-				if (duty_set > 0.0) {
-					iq_set_tmp = conf_now->lo_current_max;
-				} else {
-					iq_set_tmp = -conf_now->lo_current_max;
-				}
-				motor_now->duty_was_pi = false;
-			}
+ 			// Duty cycle control
+			float Vbus = motor_now->m_motor_state.v_bus;
+			float R = motor_now->m_conf->foc_motor_r;
+			float lambda = motor_now->m_conf->foc_motor_flux_linkage;
+			float elec_omega = motor_now->m_speed_est_fast;
+			iq_set_tmp = (duty_set*Vbus*ONE_BY_SQRT3 - elec_omega*lambda)/(R*1.5) * motor_now->m_conf->foc_duty_dowmramp_kp;
 		} else if (motor_now->m_control_mode == CONTROL_MODE_CURRENT_BRAKE) {
 			// Braking
 			iq_set_tmp = -SIGN(speed_fast_now) * fabsf(iq_set_tmp);
