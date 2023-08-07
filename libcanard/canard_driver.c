@@ -692,7 +692,11 @@ static void handle_esc_raw_command(CanardInstance* ins, CanardRxTransfer* transf
 					break;
 
 				case UAVCAN_RAW_MODE_DUTY:
-					mc_interface_set_duty(raw_val);
+					if (raw_val == 0) {
+						mc_interface_set_pid_pos(180);
+					} else {
+						mc_interface_set_duty(raw_val);
+					}
 					break;
 
 				case UAVCAN_RAW_MODE_RPM:
