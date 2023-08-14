@@ -2863,22 +2863,6 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 			duty_set = 0.0;
 		}
 
-		// Reset integrator when leaving duty cycle mode, as the windup protection is not too fast. Making
-		// better windup protection is probably better, but not easy.
-		if (!control_duty && motor_now->m_was_control_duty) {
-			motor_now->m_motor_state.vq_int = motor_now->m_motor_state.vq;
-			if (conf_now->foc_cc_decoupling == FOC_CC_DECOUPLING_BEMF ||
-					conf_now->foc_cc_decoupling == FOC_CC_DECOUPLING_CROSS_BEMF) {
-				motor_now->m_motor_state.vq_int -= motor_now->m_pll_speed * conf_now->foc_motor_flux_linkage;
-			}
-		}
-		motor_now->m_was_control_duty = control_duty;
-
-		if (!control_duty) {
-			motor_now->m_duty_i_term = motor_now->m_motor_state.iq / conf_now->lo_current_max;
-			motor_now->duty_was_pi = false;
-		}
-
 		if (control_duty) {
  			// Duty cycle control
 			float Vbus = motor_now->m_motor_state.v_bus;
@@ -3071,7 +3055,6 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 		motor_now->m_motor_state.iq = 0.0;
 		motor_now->m_motor_state.id_filter = 0.0;
 		motor_now->m_motor_state.iq_filter = 0.0;
-		motor_now->m_duty_i_term = 0.0;
 #ifdef HW_HAS_INPUT_CURRENT_SENSOR
 		GET_INPUT_CURRENT_OFFSET(); // TODO: should this be done here?
 #endif
