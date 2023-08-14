@@ -22,6 +22,26 @@
 
 #include "datatypes.h"
 
+typedef struct {
+    float i_ref;
+    float i_meas;
+    float ff;
+    float dt;
+    float output_limit;
+    float K_R;
+    float K_P;
+    float K_I;
+} curr_pid_param_s;
+
+typedef struct {
+    bool sat_pos;
+    bool sat_neg;
+    float integrator;
+    float output;
+} curr_pid_state_s;
+
+void curr_pid_run(volatile curr_pid_param_s *param, volatile curr_pid_state_s *state);
+
 // Types
 typedef struct {
 	float va;
@@ -58,10 +78,12 @@ typedef struct {
 	float iq_filter;
 	float vd;
 	float vq;
-	float vd_int;
-	float vq_int;
 	uint32_t svm_sector;
 	bool is_using_phase_filters;
+	curr_pid_param_s iq_pid_param;
+	curr_pid_param_s id_pid_param;
+	curr_pid_state_s iq_pid_state;
+	curr_pid_state_s id_pid_state;
 } motor_state_t;
 
 typedef struct {

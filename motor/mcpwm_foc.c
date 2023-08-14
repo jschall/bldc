@@ -2518,8 +2518,8 @@ void mcpwm_foc_print_state(void) {
 	commands_printf("Obs_x1:    %.2f", (double)get_motor_now()->m_observer_state.x1);
 	commands_printf("Obs_x2:    %.2f", (double)get_motor_now()->m_observer_state.x2);
 	commands_printf("lambda_est:%.4f", (double)get_motor_now()->m_observer_state.lambda_est);
-	commands_printf("vd_int:    %.2f", (double)get_motor_now()->m_motor_state.vd_int);
-	commands_printf("vq_int:    %.2f", (double)get_motor_now()->m_motor_state.vq_int);
+	commands_printf("vd_int:    %.2f", (double)get_motor_now()->m_motor_state.id_pid_state.integrator);
+	commands_printf("vq_int:    %.2f", (double)get_motor_now()->m_motor_state.id_pid_state.integrator);
 	commands_printf("off_delay: %.2f", (double)get_motor_now()->m_current_off_delay);
 }
 
@@ -3154,12 +3154,12 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 		// Set the current controller integrator to the BEMF voltage to avoid
 		// a current spike when the motor is driven again. Notice that we have
 		// to take decoupling into account.
-		motor_now->m_motor_state.vd_int = motor_now->m_motor_state.vd;
-		motor_now->m_motor_state.vq_int = motor_now->m_motor_state.vq;
+		motor_now->m_motor_state.id_pid_state.integrator = motor_now->m_motor_state.vd;
+		motor_now->m_motor_state.iq_pid_state.integrator = motor_now->m_motor_state.vq;
 
 		if (conf_now->foc_cc_decoupling == FOC_CC_DECOUPLING_BEMF ||
 				conf_now->foc_cc_decoupling == FOC_CC_DECOUPLING_CROSS_BEMF) {
-			motor_now->m_motor_state.vq_int -= motor_now->m_pll_speed * conf_now->foc_motor_flux_linkage;
+			motor_now->m_motor_state.iq_pid_state.integrator -= motor_now->m_pll_speed * conf_now->foc_motor_flux_linkage;
 		}
 
 		// Update corresponding modulation
@@ -3910,20 +3910,23 @@ static void control_current(motor_all_state_t *motor, float dt) {
 		}
 	}
 
-	float Ierr_d = state_m->id_target - state_m->id;
-	float Ierr_q = state_m->iq_target - state_m->iq;
-
-	float ki = conf_now->foc_current_ki;
-	if (conf_now->foc_temp_comp) {
-		ki = motor->m_current_ki_temp_comp;
+	state_m->iq_pid_param.i_ref = state_m->iq_target;
+	state_m->id_pid_param.i_ref = state_m->id_target;
+	state_m->iq_pid_param.i_meas = state_m->iq;
+	state_m->id_pid_param.i_meas = state_m->id;
+	state_m->iq_pid_param.dt = dt;
+	state_m->id_pid_param.dt = dt;
+	state_m->iq_pid_param.K_R = 0;//1.5*conf_now->foc_motor_r;
+	state_m->id_pid_param.K_R = 0;//1.5*conf_now->foc_motor_r;
+	state_m->iq_pid_param.K_P = conf_now->foc_current_kp;
+	state_m->id_pid_param.K_P = conf_now->foc_current_kp * d_gain_scale;
+	if (!conf_now->foc_temp_comp) {
+		state_m->iq_pid_param.K_I = conf_now->foc_current_ki;
+		state_m->id_pid_param.K_I = conf_now->foc_current_ki;
+	} else {
+		state_m->iq_pid_param.K_I = motor->m_current_ki_temp_comp;
+		state_m->id_pid_param.K_I = motor->m_current_ki_temp_comp;
 	}
-
-	state_m->vd_int += Ierr_d * (ki * d_gain_scale * dt);
-	state_m->vq_int += Ierr_q * (ki * dt);
-
-	// Feedback (PI controller). No D action needed because the plant is a first order system (tf = 1/(Ls+R))
-	state_m->vd = state_m->vd_int + Ierr_d * conf_now->foc_current_kp * d_gain_scale;
-	state_m->vq = state_m->vq_int + Ierr_q * conf_now->foc_current_kp;
 
 	// Decoupling. Using feedforward this compensates for the fact that the equations of a PMSM
 	// are not really decoupled (the d axis current has impact on q axis voltage and visa-versa):
@@ -3956,33 +3959,24 @@ static void control_current(motor_all_state_t *motor, float dt) {
 		}
 	}
 
-	state_m->vd -= dec_vd; //Negative sign as in the PMSM equations
-	state_m->vq += dec_vq + dec_bemf;
+	state_m->id_pid_param.ff = -dec_vd;
+	state_m->iq_pid_param.ff = dec_vq + dec_bemf;
 
 	// Calculate the max length of the voltage space vector without overmodulation.
 	// Is simply 1/sqrt(3) * v_bus. See https://microchipdeveloper.com/mct5001:start. Adds margin with max_duty.
-	float max_v_mag = ONE_BY_SQRT3 * max_duty * state_m->v_bus;
-
-	// Saturation and anti-windup. Notice that the d-axis has priority as it controls field
-	// weakening and the efficiency.
-	float vd_presat = state_m->vd;
-	utils_truncate_number_abs((float*)&state_m->vd, max_v_mag);
-	state_m->vd_int += (state_m->vd - vd_presat);
-
-	float max_vq = sqrtf(SQ(max_v_mag) - SQ(state_m->vd));
-	float vq_presat = state_m->vq;
-	utils_truncate_number_abs((float*)&state_m->vq, max_vq);
-	state_m->vq_int += (state_m->vq - vq_presat);
-
-	utils_saturate_vector_2d((float*)&state_m->vd, (float*)&state_m->vq, max_v_mag);
+	//float max_v_mag = ONE_BY_SQRT3 * max_duty * state_m->v_bus;
+	state_m->id_pid_param.output_limit = ONE_BY_SQRT3 * max_duty * state_m->v_bus;
+	curr_pid_run(&state_m->id_pid_param, &state_m->id_pid_state);
+	state_m->iq_pid_param.output_limit = sqrtf(SQ(state_m->id_pid_param.output_limit) - SQ(state_m->id_pid_state.output));
+	curr_pid_run(&state_m->iq_pid_param, &state_m->iq_pid_state);
 
 	// mod_d and mod_q are normalized such that 1 corresponds to the max possible voltage:
 	//    voltage_normalize = 1/(2/3*V_bus)
 	// This includes overmodulation and therefore cannot be made in any direction.
 	// Note that this scaling is different from max_v_mag, which is without over modulation.
 	const float voltage_normalize = 1.5 / state_m->v_bus;
-	state_m->mod_d = state_m->vd * voltage_normalize;
-	state_m->mod_q = state_m->vq * voltage_normalize;
+	state_m->mod_d = state_m->id_pid_state.output * voltage_normalize;
+	state_m->mod_q = state_m->iq_pid_state.output * voltage_normalize;
 	UTILS_NAN_ZERO(state_m->mod_q_filter);
 	UTILS_LP_FAST(state_m->mod_q_filter, state_m->mod_q, 0.2);
 

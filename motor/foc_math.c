@@ -21,6 +21,33 @@
 #include "utils_math.h"
 #include <math.h>
 
+void curr_pid_run(volatile curr_pid_param_s *param, volatile curr_pid_state_s *state)
+{
+    float err = param->i_ref - param->i_meas;
+
+    if ((!state->sat_pos || err < 0) && (!state->sat_neg || err > 0)) {
+        state->integrator += err * param->dt * param->K_I;
+    }
+
+    state->output  = param->i_ref * param->K_R;
+    state->output += param->ff;
+    state->output += err * param->K_P;
+    state->output += state->integrator;
+
+    if (state->output > param->output_limit) {
+        state->output = param->output_limit;
+        state->sat_pos = true;
+        state->sat_neg = false;
+    } else if (state->output < -param->output_limit) {
+        state->output = -param->output_limit;
+        state->sat_pos = false;
+        state->sat_neg = true;
+    } else {
+        state->sat_pos = false;
+        state->sat_neg = false;
+    }
+}
+
 // See http://cas.ensmp.fr/~praly/Telechargement/Journaux/2010-IEEE_TPEL-Lee-Hong-Nam-Ortega-Praly-Astolfi.pdf
 void foc_observer_update(float v_alpha, float v_beta, float i_alpha, float i_beta,
 		float dt, observer_state *state, float *phase, motor_all_state_t *motor) {
