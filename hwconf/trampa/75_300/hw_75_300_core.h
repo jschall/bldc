@@ -32,8 +32,8 @@
 
 // HW properties
 #define HW_HAS_3_SHUNTS
-#define HW_HAS_PHASE_SHUNTS
-#define HW_HAS_PHASE_FILTERS
+//#define HW_HAS_PHASE_SHUNTS
+//#define HW_HAS_PHASE_FILTERS
 
 // Macros
 #ifdef HW75_300_VEDDER_FIRST_PCB
@@ -53,15 +53,15 @@
 #define LED_RED_ON()			palSetPad(LED_RED_GPIO, LED_RED_PIN)
 #define LED_RED_OFF()			palClearPad(LED_RED_GPIO, LED_RED_PIN)
 
-#if defined(HW75_300_REV_2) || defined(HW75_300_REV_3)
-#define PHASE_FILTER_GPIO		GPIOC
-#define PHASE_FILTER_PIN		9
-#else
-#define PHASE_FILTER_GPIO		GPIOC
-#define PHASE_FILTER_PIN		11
-#endif
-#define PHASE_FILTER_ON()		palSetPad(PHASE_FILTER_GPIO, PHASE_FILTER_PIN)
-#define PHASE_FILTER_OFF()		palClearPad(PHASE_FILTER_GPIO, PHASE_FILTER_PIN)
+// #if defined(HW75_300_REV_2) || defined(HW75_300_REV_3)
+// #define PHASE_FILTER_GPIO		GPIOC
+// #define PHASE_FILTER_PIN		9
+// #else
+// #define PHASE_FILTER_GPIO		GPIOC
+// #define PHASE_FILTER_PIN		11
+// #endif
+// #define PHASE_FILTER_ON()		palSetPad(PHASE_FILTER_GPIO, PHASE_FILTER_PIN)
+// #define PHASE_FILTER_OFF()		palClearPad(PHASE_FILTER_GPIO, PHASE_FILTER_PIN)
 
 #define AUX_GPIO				GPIOC
 #define AUX_PIN					12
@@ -137,7 +137,7 @@
 #define CURRENT_AMP_GAIN		20.0
 #endif
 #ifndef CURRENT_SHUNT_RES
-#define CURRENT_SHUNT_RES		(0.0005 / 3.0)
+#define CURRENT_SHUNT_RES		(0.0005)
 #endif
 
 // Input voltage
@@ -276,7 +276,7 @@
 #define MCCONF_L_MIN_VOLTAGE			12.0		// Minimum input voltage
 #endif
 #ifndef MCCONF_L_MAX_VOLTAGE
-#define MCCONF_L_MAX_VOLTAGE			72.0	// Maximum input voltage
+#define MCCONF_L_MAX_VOLTAGE			84.0	// Maximum input voltage
 #endif
 #ifndef MCCONF_DEFAULT_MOTOR_TYPE
 #define MCCONF_DEFAULT_MOTOR_TYPE		MOTOR_TYPE_FOC
@@ -301,7 +301,7 @@
 #define HW_LIM_CURRENT			-400.0, 400.0
 #define HW_LIM_CURRENT_IN		-400.0, 400.0
 #define HW_LIM_CURRENT_ABS		0.0, 480.0
-#define HW_LIM_VIN				11.0, 72.0
+#define HW_LIM_VIN				11.0, 84.0
 #define HW_LIM_ERPM				-200e3, 200e3
 #define HW_LIM_DUTY_MIN			0.0, 0.1
 #define HW_LIM_DUTY_MAX			0.0, 0.99
