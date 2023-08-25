@@ -115,8 +115,8 @@
 #define ADC_IND_TEMP_MOS_3		8
 #else
 #define ADC_IND_TEMP_MOS		8
-#define ADC_IND_TEMP_MOS_2		15
-#define ADC_IND_TEMP_MOS_3		16
+#define ADC_IND_TEMP_MOS_2		8
+#define ADC_IND_TEMP_MOS_3		8
 #endif
 #define ADC_IND_TEMP_MOTOR		9
 #define ADC_IND_VREFINT			12
@@ -272,35 +272,35 @@
 #define HW_DEAD_TIME_NSEC		1000.0
 
 // Default setting overrides
-#ifndef MCCONF_L_MIN_VOLTAGE
-#define MCCONF_L_MIN_VOLTAGE			12.0		// Minimum input voltage
-#endif
-#ifndef MCCONF_L_MAX_VOLTAGE
-#define MCCONF_L_MAX_VOLTAGE			84.0	// Maximum input voltage
-#endif
-#ifndef MCCONF_DEFAULT_MOTOR_TYPE
-#define MCCONF_DEFAULT_MOTOR_TYPE		MOTOR_TYPE_FOC
-#endif
-#ifndef MCCONF_FOC_F_ZV
-#define MCCONF_FOC_F_ZV					30000.0
-#endif
-#ifndef MCCONF_L_MAX_ABS_CURRENT
-#define MCCONF_L_MAX_ABS_CURRENT		420.0	// The maximum absolute current above which a fault is generated
-#endif
-#ifndef MCCONF_FOC_SAMPLE_V0_V7
-#define MCCONF_FOC_SAMPLE_V0_V7			false	// Run control loop in both v0 and v7 (requires phase shunts)
-#endif
-#ifndef MCCONF_L_IN_CURRENT_MAX
-#define MCCONF_L_IN_CURRENT_MAX			250.0	// Input current limit in Amperes (Upper)
-#endif
-#ifndef MCCONF_L_IN_CURRENT_MIN
-#define MCCONF_L_IN_CURRENT_MIN			-200.0	// Input current limit in Amperes (Lower)
-#endif
+// #ifndef MCCONF_L_MIN_VOLTAGE
+// #define MCCONF_L_MIN_VOLTAGE			12.0		// Minimum input voltage
+// #endif
+// #ifndef MCCONF_L_MAX_VOLTAGE
+// #define MCCONF_L_MAX_VOLTAGE			84.0	// Maximum input voltage
+// #endif
+// #ifndef MCCONF_DEFAULT_MOTOR_TYPE
+// #define MCCONF_DEFAULT_MOTOR_TYPE		MOTOR_TYPE_FOC
+// #endif
+// #ifndef MCCONF_FOC_F_ZV
+// #define MCCONF_FOC_F_ZV					30000.0
+// #endif
+// #ifndef MCCONF_L_MAX_ABS_CURRENT
+// #define MCCONF_L_MAX_ABS_CURRENT		420.0	// The maximum absolute current above which a fault is generated
+// #endif
+// #ifndef MCCONF_FOC_SAMPLE_V0_V7
+// #define MCCONF_FOC_SAMPLE_V0_V7			false	// Run control loop in both v0 and v7 (requires phase shunts)
+// #endif
+// #ifndef MCCONF_L_IN_CURRENT_MAX
+// #define MCCONF_L_IN_CURRENT_MAX			250.0	// Input current limit in Amperes (Upper)
+// #endif
+// #ifndef MCCONF_L_IN_CURRENT_MIN
+// #define MCCONF_L_IN_CURRENT_MIN			-200.0	// Input current limit in Amperes (Lower)
+// #endif
 
 // Setting limits
-#define HW_LIM_CURRENT			-400.0, 400.0
-#define HW_LIM_CURRENT_IN		-400.0, 400.0
-#define HW_LIM_CURRENT_ABS		0.0, 480.0
+#define HW_LIM_CURRENT			-400.0/3, 400.0/3
+#define HW_LIM_CURRENT_IN		-400.0/3, 400.0/3
+#define HW_LIM_CURRENT_ABS		0.0, 480.0/3
 #define HW_LIM_VIN				11.0, 84.0
 #define HW_LIM_ERPM				-200e3, 200e3
 #define HW_LIM_DUTY_MIN			0.0, 0.1
