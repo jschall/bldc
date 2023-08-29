@@ -98,7 +98,7 @@ void app_custom_start(void) {
 
 	terminal_register_command_callback(
 			"appmode",
-			"set appmode",
+			"set appmode: 0=OFF, 1=PROPELLER, 2=RANDOMDUTY",
 			"[appmode]",
 			terminal_set_appmode);
 
