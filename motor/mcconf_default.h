@@ -163,7 +163,7 @@
 #define MCCONF_FOC_CURRENT_KI 5
 
 // Zero Vector Frequency
-#define MCCONF_FOC_F_ZV 60000
+#define MCCONF_FOC_F_ZV 40000
 
 // Dead Time Compensation
 #define MCCONF_FOC_DT_US 0.12
