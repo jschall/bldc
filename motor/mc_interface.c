@@ -2291,6 +2291,7 @@ static void update_override_limits(volatile motor_if_state_t *motor, volatile mc
 	UTILS_LP_FAST(motor->m_gate_driver_voltage, GET_GATE_DRIVER_SUPPLY_VOLTAGE(), 0.01);
 #endif
 
+#if 0
 	const float l_current_min_tmp = conf->l_current_min * conf->l_current_min_scale;
 	const float l_current_max_tmp = conf->l_current_max * conf->l_current_max_scale;
 
@@ -2489,6 +2490,29 @@ static void update_override_limits(volatile motor_if_state_t *motor, volatile mc
 
 	conf->lo_current_max = lo_max;
 	conf->lo_current_min = lo_min;
+#else
+	float lo_min = conf->l_current_min * conf->l_current_min_scale;
+	float lo_max = conf->l_current_max * conf->l_current_max_scale;
+
+// 	lo_max = utils_min_abs(lo_max, lo_max_rpm);
+// 	lo_max = utils_min_abs(lo_max, lo_min_rpm);
+// 	lo_max = utils_min_abs(lo_max, lo_max_curr_dec);
+// 	lo_max = utils_min_abs(lo_max, lo_fet_temp_accel);
+// 	lo_max = utils_min_abs(lo_max, lo_motor_temp_accel);
+// 	lo_max = utils_min_abs(lo_max, lo_max_duty);
+// 	lo_max = utils_min_abs(lo_max, lo_max_i_in);
+
+	if (lo_max < conf->cc_min_current) {
+		lo_max = conf->cc_min_current;
+	}
+
+	if (lo_min > -conf->cc_min_current) {
+		lo_min = -conf->cc_min_current;
+	}
+
+	conf->lo_current_max = lo_max;
+	conf->lo_current_min = lo_min;
+#endif
 }
 
 static volatile motor_if_state_t *motor_now(void) {
