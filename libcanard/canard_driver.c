@@ -23,6 +23,7 @@
 
 #include "canard_driver.h"
 #include "canard.h"
+#include "uavcan/equipment/safety/ArmingStatus.h"
 #include "uavcan/equipment/esc/Status.h"
 #include "uavcan/equipment/esc/RawCommand.h"
 #include "uavcan/equipment/esc/RPMCommand.h"
@@ -647,6 +648,22 @@ static void handle_get_node_info(CanardInstance* ins, CanardRxTransfer* transfer
 	}
 }
 
+static void handle_armingstatus(CanardInstance* ins, CanardRxTransfer* transfer) {
+	(void)ins;
+	struct uavcan_equipment_safety_ArmingStatus msg;
+	memset(&msg, 0, sizeof(msg));
+
+	if (!uavcan_equipment_safety_ArmingStatus_decode(transfer, &msg)) {
+		if (msg.status == UAVCAN_EQUIPMENT_SAFETY_ARMINGSTATUS_STATUS_FULLY_ARMED) {
+			// commanded to arm
+			timeout_reset();
+		} else {
+			// commanded to disarm
+			timeout_force_trigger();
+		}
+	}
+}
+
 /*
  * Handle ESC Raw command
  */
@@ -710,7 +727,6 @@ static void handle_esc_raw_command(CanardInstance* ins, CanardRxTransfer* transf
 				default:
 					break;
 			}
-			timeout_reset();
 		}
 	}
 }
@@ -743,7 +759,6 @@ static void handle_esc_rpm_command(CanardInstance* ins, CanardRxTransfer* transf
 #endif
 
 			mc_interface_set_pid_speed(rpm_val);
-			timeout_reset();
 		}
 	}
 }

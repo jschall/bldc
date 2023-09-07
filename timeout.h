@@ -39,6 +39,7 @@ typedef enum {
 void timeout_init(void);
 void timeout_configure(systime_t timeout, float brake_current, KILL_SW_MODE kill_sw_mode);
 void timeout_reset(void);
+void timeout_force_trigger(void);
 bool timeout_has_timeout(void);
 float timeout_secs_since_update(void);
 bool timeout_kill_sw_active(void);

@@ -92,6 +92,10 @@ void timeout_reset(void) {
 	last_update_time = chVTGetSystemTimeX();
 }
 
+void timeout_force_trigger(void) {
+	last_update_time = chVTGetSystemTimeX()-MS2ST(timeout_msec+1);
+}
+
 bool timeout_has_timeout(void) {
 	return has_timeout;
 }
