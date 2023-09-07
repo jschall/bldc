@@ -1206,6 +1206,10 @@ static void onTransferReceived(CanardInstance* ins, CanardRxTransfer* transfer) 
 			handle_esc_raw_command(ins, transfer);
 			break;
 
+		case UAVCAN_EQUIPMENT_SAFETY_ARMINGSTATUS_ID:
+			handle_armingstatus(ins, transfer);
+			break;
+
 		case UAVCAN_EQUIPMENT_ESC_RPMCOMMAND_ID:
 			handle_esc_rpm_command(ins, transfer);
 			break;
