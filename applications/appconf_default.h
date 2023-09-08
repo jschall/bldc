@@ -19,7 +19,7 @@
 #define APPCONF_CAN_STATUS_RATE_2 5
 
 // Can Messages Rate 1
-#define APPCONF_CAN_STATUS_MSGS_R1 0
+#define APPCONF_CAN_STATUS_MSGS_R1 15
 
 // Can Messages Rate 2
 #define APPCONF_CAN_STATUS_MSGS_R2 0
@@ -31,10 +31,10 @@
 #define APPCONF_PAIRING_DONE 0
 
 // Enable Permanent UART
-#define APPCONF_PERMANENT_UART_ENABLED 1
+#define APPCONF_PERMANENT_UART_ENABLED 0
 
 // Shutdown Mode
-#define APPCONF_SHUTDOWN_MODE 7
+#define APPCONF_SHUTDOWN_MODE 1
 
 // CAN Mode
 #define APPCONF_CAN_MODE 1
