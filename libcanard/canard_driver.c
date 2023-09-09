@@ -695,37 +695,39 @@ static void handle_esc_raw_command(CanardInstance* ins, CanardRxTransfer* transf
 
 			app_disable_output(100);
 
-			switch (conf->uavcan_raw_mode) {
-				case UAVCAN_RAW_MODE_CURRENT:
-					mc_interface_set_current_rel(raw_val);
-					break;
-
-				case UAVCAN_RAW_MODE_CURRENT_NO_REV_BRAKE:
-					if (raw_val >= 0.0) {
+			if (!timeout_has_timeout()) {
+				switch (conf->uavcan_raw_mode) {
+					case UAVCAN_RAW_MODE_CURRENT:
 						mc_interface_set_current_rel(raw_val);
-					} else {
-						mc_interface_set_brake_current_rel(-raw_val);
-					}
-					break;
+						break;
 
-				case UAVCAN_RAW_MODE_DUTY:
-					if (raw_val == 0) {
-						mc_interface_set_pid_pos(180);
-					} else {
-						// scale so that max duty is always 48v regardless of input voltage
-						float corrected_val = 48/mc_interface_get_input_voltage_filtered();
-						utils_truncate_number_abs(&corrected_val,1.0);
+					case UAVCAN_RAW_MODE_CURRENT_NO_REV_BRAKE:
+						if (raw_val >= 0.0) {
+							mc_interface_set_current_rel(raw_val);
+						} else {
+							mc_interface_set_brake_current_rel(-raw_val);
+						}
+						break;
 
-						mc_interface_set_duty(corrected_val);
-					}
-					break;
+					case UAVCAN_RAW_MODE_DUTY:
+						if (raw_val == 0) {
+							mc_interface_set_pid_pos(180);
+						} else {
+							// scale so that max duty is always 48v regardless of input voltage
+							float corrected_val = 48/mc_interface_get_input_voltage_filtered();
+							utils_truncate_number_abs(&corrected_val,1.0);
 
-				case UAVCAN_RAW_MODE_RPM:
-					mc_interface_set_pid_speed(raw_val * conf->uavcan_raw_rpm_max);
-					break;
+							mc_interface_set_duty(corrected_val);
+						}
+						break;
 
-				default:
-					break;
+					case UAVCAN_RAW_MODE_RPM:
+						mc_interface_set_pid_speed(raw_val * conf->uavcan_raw_rpm_max);
+						break;
+
+					default:
+						break;
+				}
 			}
 		}
 	}
