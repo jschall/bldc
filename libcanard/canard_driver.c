@@ -1283,6 +1283,10 @@ static bool shouldAcceptTransfer(const CanardInstance* ins,
 			*out_data_type_signature = UAVCAN_EQUIPMENT_ESC_RAWCOMMAND_SIGNATURE;
 			return true;
 
+		case UAVCAN_EQUIPMENT_SAFETY_ARMINGSTATUS_ID:
+			*out_data_type_signature = UAVCAN_EQUIPMENT_SAFETY_ARMINGSTATUS_SIGNATURE;
+			return true;
+
 		case UAVCAN_EQUIPMENT_ESC_RPMCOMMAND_ID:
 			*out_data_type_signature = UAVCAN_EQUIPMENT_ESC_RPMCOMMAND_SIGNATURE;
 			return true;
