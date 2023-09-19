@@ -436,7 +436,7 @@
 #define MCCONF_S_PID_SPEED_SOURCE 0
 
 // Position PID Kp
-#define MCCONF_P_PID_KP 0.02
+#define MCCONF_P_PID_KP 0.01
 
 // Position PID Ki
 #define MCCONF_P_PID_KI 0
@@ -445,19 +445,19 @@
 #define MCCONF_P_PID_KD 0
 
 // Position PID Kd Process
-#define MCCONF_P_PID_KD_PROC 1e-05
+#define MCCONF_P_PID_KD_PROC 0.00035
 
 // Position PID Kd Filter
-#define MCCONF_P_PID_KD_FILTER 0.05
+#define MCCONF_P_PID_KD_FILTER 0.002
 
 // Position Angle Division
 #define MCCONF_P_PID_ANG_DIV 1
 
 // Gain Decrease Angle
-#define MCCONF_P_PID_GAIN_DEC_ANGLE 1
+#define MCCONF_P_PID_GAIN_DEC_ANGLE 0
 
 // Position PID Offset Angle
-#define MCCONF_P_PID_OFFSET 22.1045
+#define MCCONF_P_PID_OFFSET 207.861
 
 // Startup boost
 #define MCCONF_CC_STARTUP_BOOST_DUTY 0.01

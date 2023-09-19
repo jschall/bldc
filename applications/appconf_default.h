@@ -13,7 +13,7 @@
 #define APPCONF_TIMEOUT_BRAKE_CURRENT 0
 
 // Can Status Rate 1
-#define APPCONF_CAN_STATUS_RATE_1 50
+#define APPCONF_CAN_STATUS_RATE_1 10
 
 // Can Status Rate 2
 #define APPCONF_CAN_STATUS_RATE_2 5
