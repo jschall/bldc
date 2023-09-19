@@ -714,7 +714,7 @@ static void handle_esc_raw_command(CanardInstance* ins, CanardRxTransfer* transf
 							mc_interface_set_pid_pos(180);
 						} else {
 							// scale so that max duty is always 48v regardless of input voltage
-							float corrected_val = 48/mc_interface_get_input_voltage_filtered();
+							float corrected_val = raw_val * 48/mc_interface_get_input_voltage_filtered();
 							utils_truncate_number_abs(&corrected_val,1.0);
 
 							mc_interface_set_duty(corrected_val);
