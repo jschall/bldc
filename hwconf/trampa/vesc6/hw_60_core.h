@@ -46,7 +46,7 @@
 // HW properties
 #define HW_HAS_DRV8301
 #define HW_HAS_3_SHUNTS
-#define HW_HAS_PHASE_SHUNTS
+// #define HW_HAS_PHASE_SHUNTS
 #if !defined(HW60_IS_MK3) && !defined(HW60_IS_MK4) && !defined(HW60_IS_MK5) && !defined(HW60_IS_MK6)
 #define HW_HAS_PERMANENT_NRF
 #endif
@@ -404,6 +404,8 @@
 #define READ_HALL1()			palReadPad(HW_HALL_ENC_GPIO1, HW_HALL_ENC_PIN1)
 #define READ_HALL2()			palReadPad(HW_HALL_ENC_GPIO2, HW_HALL_ENC_PIN2)
 #define READ_HALL3()			palReadPad(HW_HALL_ENC_GPIO3, HW_HALL_ENC_PIN3)
+
+#define HW_LIM_FOC_CTRL_LOOP_FREQ   3000.0, 200000.0
 
 // Default setting overrides
 #ifndef MCCONF_DEFAULT_MOTOR_TYPE

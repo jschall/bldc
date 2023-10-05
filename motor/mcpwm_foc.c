@@ -2672,6 +2672,155 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 	motor_now->m_curr_unbalance = curr0 + curr1 + curr2;
 #endif
 
+/*
+ *
+ *
+ *
+ * BEGIN CUSTOM DCDC CODE
+ *
+ *
+ *
+ */
+
+	float Va, Vb, Vc;
+	volatile float *ofs_volt = conf_now->foc_offsets_voltage_undriven;
+	if (motor_now->m_state == MC_STATE_RUNNING) {
+		ofs_volt = conf_now->foc_offsets_voltage;
+	}
+
+#ifdef HW_HAS_DUAL_MOTORS
+#ifdef HW_HAS_3_SHUNTS
+	if (&m_motor_1 != motor) {
+		Va = (ADC_VOLTS(ADC_IND_SENS4) - ofs_volt[0]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+		Vb = (ADC_VOLTS(ADC_IND_SENS5) - ofs_volt[1]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+		Vc = (ADC_VOLTS(ADC_IND_SENS6) - ofs_volt[2]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+	} else {
+		Va = (ADC_VOLTS(ADC_IND_SENS1) - ofs_volt[0]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+		Vb = (ADC_VOLTS(ADC_IND_SENS2) - ofs_volt[1]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+		Vc = (ADC_VOLTS(ADC_IND_SENS3) - ofs_volt[2]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+	}
+#else
+	if (&m_motor_1 != motor) {
+		Va = (ADC_VOLTS(ADC_IND_SENS4) - ofs_volt[0]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+		Vb = (ADC_VOLTS(ADC_IND_SENS6) - ofs_volt[2]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+		Vc = (ADC_VOLTS(ADC_IND_SENS5) - ofs_volt[1]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+	} else {
+		Va = (ADC_VOLTS(ADC_IND_SENS1) - ofs_volt[0]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+		Vb = (ADC_VOLTS(ADC_IND_SENS3) - ofs_volt[2]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+		Vc = (ADC_VOLTS(ADC_IND_SENS2) - ofs_volt[1]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+	}
+#endif
+#else
+#ifdef HW_HAS_3_SHUNTS
+	Va = (ADC_VOLTS(ADC_IND_SENS1) - ofs_volt[0]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+	Vb = (ADC_VOLTS(ADC_IND_SENS2) - ofs_volt[1]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+	Vc = (ADC_VOLTS(ADC_IND_SENS3) - ofs_volt[2]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+#else
+	Va = (ADC_VOLTS(ADC_IND_SENS1) - ofs_volt[0]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+	Vb = (ADC_VOLTS(ADC_IND_SENS3) - ofs_volt[2]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+	Vc = (ADC_VOLTS(ADC_IND_SENS2) - ofs_volt[1]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+#endif
+#endif
+
+#define DCDC_MODE_OFF 0
+#define DCDC_MODE_RUNNING 1
+
+#define MAX_BATT_VOLTAGE 32
+#define INPUT_VOLTAGE_START 5
+#define INPUT_VOLTAGE_STOP 4
+
+#ifdef HW_HAS_PHASE_SHUNTS
+	float dt;
+	if (conf_now->foc_sample_v0_v7) {
+		dt = 1.0 / conf_now->foc_f_zv;
+	} else {
+		dt = 1.0 / (conf_now->foc_f_zv / 2.0);
+	}
+#else
+	float dt = 1.0 / (conf_now->foc_f_zv / 2.0);
+#endif
+
+	// This has to be done for the skip function to have any chance at working with the
+	// observer and control loops.
+	// TODO: Test this.
+	dt *= (float)FOC_CONTROL_LOOP_FREQ_DIVIDER;
+
+	static uint8_t dcdc_mode = DCDC_MODE_OFF;
+	static float V_filtered = 0;
+	volatile motor_state_t *state_m = &motor_now->m_motor_state;
+
+	if (dcdc_mode == DCDC_MODE_OFF) {
+		if (motor_now->m_output_on) {
+			stop_pwm_hw(motor_now);
+		}
+
+		conf_now->foc_offsets_current[0] += curr0*0.002;
+		conf_now->foc_offsets_current[1] += curr1*0.002;
+#ifdef HW_HAS_3_SHUNTS
+		conf_now->foc_offsets_current[2] += curr2*0.002;
+#endif
+
+		UTILS_LP_FAST(V_filtered, Va, 0.02);
+
+		if (Va > INPUT_VOLTAGE_START) {
+			state_m->iq_pid_param.ff = Va;
+			dcdc_mode = DCDC_MODE_RUNNING;
+		}
+	} else if (dcdc_mode == DCDC_MODE_RUNNING) {
+		float Vbus = motor_now->m_motor_state.v_bus;
+		state_m->iq_pid_param.i_ref = (Vbus-MAX_BATT_VOLTAGE) - 1;
+		utils_truncate_number_abs(&state_m->iq_pid_param.i_ref, 1);
+		state_m->iq_pid_param.i_meas = state_m->iq;
+		state_m->iq_pid_param.dt = dt;
+		state_m->iq_pid_param.K_R = 0;
+		state_m->iq_pid_param.K_P = conf_now->foc_current_kp;
+		state_m->iq_pid_param.K_I = conf_now->foc_current_ki;
+		state_m->id_pid_param.output_limit = Vbus;
+		curr_pid_run(&state_m->iq_pid_param, &state_m->iq_pid_state);
+
+		float duty1, duty2, duty3;
+		duty2 = duty3 = duty1 = state_m->iq_pid_state.output / Vbus;
+	// 	duty2 = 0;
+	// 	duty3 = 0;
+
+		uint32_t duty1_int = duty1 * TIM1->ARR;
+		uint32_t duty2_int = duty2 * TIM1->ARR;
+		uint32_t duty3_int = duty3 * TIM1->ARR;
+		TIMER_UPDATE_DUTY_M1(duty1_int, duty2_int, duty3_int);
+		if (!motor_now->m_output_on) {
+			start_pwm_hw(motor_now);
+		}
+
+		UTILS_LP_FAST(V_filtered, state_m->iq_pid_state.output, 0.02);
+
+		// if we saturate, it means we are probably disconnected
+		if (state_m->iq_pid_state.output < INPUT_VOLTAGE_STOP) {
+			memset(&state_m->iq_pid_state, 0, sizeof(state_m->iq_pid_state));
+			dcdc_mode = DCDC_MODE_OFF;
+		}
+	}
+
+#ifdef AD2S1205_SAMPLE_GPIO
+	// Release sample in the AD2S1205 resolver IC.
+	palSetPad(AD2S1205_SAMPLE_GPIO, AD2S1205_SAMPLE_PIN);
+#endif
+
+	mc_interface_mc_timer_isr(false);
+
+	m_isr_motor = 0;
+	m_last_adc_isr_duration = timer_seconds_elapsed_since(t_start);
+	return;
+
+/*
+ *
+ *
+ *
+ * END CUSTOM DCDC CODE
+ *
+ *
+ *
+ */
+
 	if (motor_now->m_motor_released) {
 		conf_now->foc_offsets_current[0] += curr0*0.002;
 		conf_now->foc_offsets_current[1] += curr1*0.002;
