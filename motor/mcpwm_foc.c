@@ -57,6 +57,7 @@ static void control_current(motor_all_state_t *motor, float dt);
 static void update_valpha_vbeta(motor_all_state_t *motor, float mod_alpha, float mod_beta);
 static void stop_pwm_hw(motor_all_state_t *motor);
 static void start_pwm_hw(motor_all_state_t *motor);
+static void terminal_print_msgs(int argc, const char **argv);
 static void terminal_tmp(int argc, const char **argv);
 static void terminal_plot_hfi(int argc, const char **argv);
 static void timer_update(motor_all_state_t *motor, float dt);
@@ -554,6 +555,12 @@ void mcpwm_foc_init(mc_configuration *conf_m1, mc_configuration *conf_m2) {
 			"FOC Test Print",
 			0,
 			terminal_tmp);
+
+		terminal_register_command_callback(
+			"print_msgs",
+			"print debug info",
+			0,
+			terminal_print_msgs);
 
 	terminal_register_command_callback(
 			"foc_plot_hfi_en",
@@ -2539,6 +2546,8 @@ void mcpwm_foc_tim_sample_int_handler(void) {
 	}
 }
 
+float g_Va, g_Vbus, g_output, g_ff, g_last_stop_reason, g_current, g_current_avg, g_mode, g_time_since_mode_change;
+
 void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 	(void)p;
 	(void)flags;
@@ -2682,52 +2691,68 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
  *
  */
 
-	float Va, Vb, Vc;
+	UTILS_LP_FAST(motor_now->m_motor_state.v_bus, GET_INPUT_VOLTAGE(), 0.1);
+
 	volatile float *ofs_volt = conf_now->foc_offsets_voltage_undriven;
 	if (motor_now->m_state == MC_STATE_RUNNING) {
 		ofs_volt = conf_now->foc_offsets_voltage;
 	}
 
+	float Va, Vb, Vc;
 #ifdef HW_HAS_DUAL_MOTORS
 #ifdef HW_HAS_3_SHUNTS
 	if (&m_motor_1 != motor) {
-		Va = (ADC_VOLTS(ADC_IND_SENS4) - ofs_volt[0]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
-		Vb = (ADC_VOLTS(ADC_IND_SENS5) - ofs_volt[1]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
-		Vc = (ADC_VOLTS(ADC_IND_SENS6) - ofs_volt[2]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+		Va = (ADC_VOLTS(ADC_IND_SENS4)) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+		Vb = (ADC_VOLTS(ADC_IND_SENS5)) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+		Vc = (ADC_VOLTS(ADC_IND_SENS6)) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
 	} else {
-		Va = (ADC_VOLTS(ADC_IND_SENS1) - ofs_volt[0]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
-		Vb = (ADC_VOLTS(ADC_IND_SENS2) - ofs_volt[1]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
-		Vc = (ADC_VOLTS(ADC_IND_SENS3) - ofs_volt[2]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+		Va = (ADC_VOLTS(ADC_IND_SENS1)) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+		Vb = (ADC_VOLTS(ADC_IND_SENS2)) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+		Vc = (ADC_VOLTS(ADC_IND_SENS3)) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
 	}
 #else
 	if (&m_motor_1 != motor) {
-		Va = (ADC_VOLTS(ADC_IND_SENS4) - ofs_volt[0]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
-		Vb = (ADC_VOLTS(ADC_IND_SENS6) - ofs_volt[2]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
-		Vc = (ADC_VOLTS(ADC_IND_SENS5) - ofs_volt[1]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+		Va = (ADC_VOLTS(ADC_IND_SENS4)) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+		Vb = (ADC_VOLTS(ADC_IND_SENS6)) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+		Vc = (ADC_VOLTS(ADC_IND_SENS5)) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
 	} else {
-		Va = (ADC_VOLTS(ADC_IND_SENS1) - ofs_volt[0]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
-		Vb = (ADC_VOLTS(ADC_IND_SENS3) - ofs_volt[2]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
-		Vc = (ADC_VOLTS(ADC_IND_SENS2) - ofs_volt[1]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+		Va = (ADC_VOLTS(ADC_IND_SENS1)) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+		Vb = (ADC_VOLTS(ADC_IND_SENS3)) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+		Vc = (ADC_VOLTS(ADC_IND_SENS2)) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
 	}
 #endif
 #else
 #ifdef HW_HAS_3_SHUNTS
-	Va = (ADC_VOLTS(ADC_IND_SENS1) - ofs_volt[0]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
-	Vb = (ADC_VOLTS(ADC_IND_SENS2) - ofs_volt[1]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
-	Vc = (ADC_VOLTS(ADC_IND_SENS3) - ofs_volt[2]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+	Va = (ADC_VOLTS(ADC_IND_SENS1)) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+	Vb = (ADC_VOLTS(ADC_IND_SENS2)) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+	Vc = (ADC_VOLTS(ADC_IND_SENS3)) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
 #else
-	Va = (ADC_VOLTS(ADC_IND_SENS1) - ofs_volt[0]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
-	Vb = (ADC_VOLTS(ADC_IND_SENS3) - ofs_volt[2]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
-	Vc = (ADC_VOLTS(ADC_IND_SENS2) - ofs_volt[1]) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+	Va = (ADC_VOLTS(ADC_IND_SENS1)) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+	Vb = (ADC_VOLTS(ADC_IND_SENS3)) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
+	Vc = (ADC_VOLTS(ADC_IND_SENS2)) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR;
 #endif
 #endif
+
+	g_Va = Va;
+	g_current = curr0;
+	UTILS_LP_FAST(g_current_avg, g_current, 0.02);
+
 
 #define DCDC_MODE_OFF 0
 #define DCDC_MODE_RUNNING 1
 
-#define MAX_BATT_VOLTAGE 32
-#define INPUT_VOLTAGE_START 5
-#define INPUT_VOLTAGE_STOP 4
+// "input" is the battery connected to the VESC's input
+// "output" is the battery connected to the VESC's phase A
+// note that this code is intended to charge the input by drawing current from the output
+
+#define INPUT_BATT_CELLS 6
+#define OUTPUT_BATT_CELLS 4
+#define INPUT_BATT_VOLTAGE_MAX (4.2*INPUT_BATT_CELLS) // input voltage higher than this causes instantaneous shutdown - possible disconnection of input battery
+#define INPUT_BATT_VOLTAGE_TARGET (4.0*INPUT_BATT_CELLS) // input voltage must be below this value for startup to occur and current setpoint will be adjusted to target this voltage
+#define OUTPUT_BATT_VOLTAGE_MIN (2.5*OUTPUT_BATT_CELLS) // output voltage below this value causes shutdown - possible disconnection of output battery
+#define OUTPUT_BATT_VOLTAGE_MIN_START (3.0*OUTPUT_BATT_CELLS) // output voltage must be above this value for startup to occur
+#define RUNTIME_BETWEEN_CALIBRATION_MS 60000
+#define CALIBATION_TIME_MS 1000
 
 #ifdef HW_HAS_PHASE_SHUNTS
 	float dt;
@@ -2740,64 +2765,75 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 	float dt = 1.0 / (conf_now->foc_f_zv / 2.0);
 #endif
 
-	// This has to be done for the skip function to have any chance at working with the
-	// observer and control loops.
-	// TODO: Test this.
 	dt *= (float)FOC_CONTROL_LOOP_FREQ_DIVIDER;
 
+	static systime_t last_mode_change_time;
 	static uint8_t dcdc_mode = DCDC_MODE_OFF;
 	static float V_filtered = 0;
 	volatile motor_state_t *state_m = &motor_now->m_motor_state;
+	float V_bus = motor_now->m_motor_state.v_bus;
+	g_Vbus = V_bus;
+	g_ff = state_m->iq_pid_param.ff;
+	g_output = state_m->iq_pid_state.output;
+
+	g_time_since_mode_change = ST2MS(chVTTimeElapsedSinceX(last_mode_change_time));
+	g_mode = dcdc_mode;
 
 	if (dcdc_mode == DCDC_MODE_OFF) {
 		if (motor_now->m_output_on) {
 			stop_pwm_hw(motor_now);
 		}
 
-		conf_now->foc_offsets_current[0] += curr0*0.002;
-		conf_now->foc_offsets_current[1] += curr1*0.002;
+		// adjust current offset calibration
+		conf_now->foc_offsets_current[0] += curr0*0.01;
+		conf_now->foc_offsets_current[1] += curr1*0.01;
 #ifdef HW_HAS_3_SHUNTS
-		conf_now->foc_offsets_current[2] += curr2*0.002;
+		conf_now->foc_offsets_current[2] += curr2*0.01;
 #endif
 
 		UTILS_LP_FAST(V_filtered, Va, 0.02);
 
-		if (Va > INPUT_VOLTAGE_START) {
+		bool sufficient_time_elapsed = ST2MS(chVTTimeElapsedSinceX(last_mode_change_time)) > CALIBATION_TIME_MS;
+		bool output_voltage_sufficient = Va > OUTPUT_BATT_VOLTAGE_MIN_START;
+		bool charging_required = V_bus < INPUT_BATT_VOLTAGE_TARGET;
+
+		if (sufficient_time_elapsed && output_voltage_sufficient && charging_required) {
+			memset(&state_m->iq_pid_state, 0, sizeof(state_m->iq_pid_state));
 			state_m->iq_pid_param.ff = Va;
 			dcdc_mode = DCDC_MODE_RUNNING;
+			last_mode_change_time = chVTGetSystemTimeX();
 		}
 	} else if (dcdc_mode == DCDC_MODE_RUNNING) {
-		float Vbus = motor_now->m_motor_state.v_bus;
-		state_m->iq_pid_param.i_ref = (Vbus-MAX_BATT_VOLTAGE) - 1;
-		utils_truncate_number_abs(&state_m->iq_pid_param.i_ref, 1);
-		state_m->iq_pid_param.i_meas = state_m->iq;
+		state_m->iq_pid_param.i_ref = -2;
+// 		utils_truncate_number_abs(&state_m->iq_pid_param.i_ref, 1);
+		state_m->iq_pid_param.i_meas = curr0*FAC_CURRENT;
 		state_m->iq_pid_param.dt = dt;
 		state_m->iq_pid_param.K_R = 0;
 		state_m->iq_pid_param.K_P = conf_now->foc_current_kp;
 		state_m->iq_pid_param.K_I = conf_now->foc_current_ki;
-		state_m->id_pid_param.output_limit = Vbus;
+		state_m->iq_pid_param.output_limit = V_bus;
 		curr_pid_run(&state_m->iq_pid_param, &state_m->iq_pid_state);
-
-		float duty1, duty2, duty3;
-		duty2 = duty3 = duty1 = state_m->iq_pid_state.output / Vbus;
-	// 	duty2 = 0;
-	// 	duty3 = 0;
-
-		uint32_t duty1_int = duty1 * TIM1->ARR;
-		uint32_t duty2_int = duty2 * TIM1->ARR;
-		uint32_t duty3_int = duty3 * TIM1->ARR;
-		TIMER_UPDATE_DUTY_M1(duty1_int, duty2_int, duty3_int);
-		if (!motor_now->m_output_on) {
-			start_pwm_hw(motor_now);
-		}
-
 		UTILS_LP_FAST(V_filtered, state_m->iq_pid_state.output, 0.02);
 
-		// if we saturate, it means we are probably disconnected
-		if (state_m->iq_pid_state.output < INPUT_VOLTAGE_STOP) {
-			memset(&state_m->iq_pid_state, 0, sizeof(state_m->iq_pid_state));
+		bool output_voltage_low = state_m->iq_pid_state.output < OUTPUT_BATT_VOLTAGE_MIN;
+		bool input_voltage_high = V_bus > INPUT_BATT_VOLTAGE_MAX;
+		bool should_calibrate = ST2MS(chVTTimeElapsedSinceX(last_mode_change_time)) > RUNTIME_BETWEEN_CALIBRATION_MS;
+		g_last_stop_reason = ((int)output_voltage_low) | (((int)input_voltage_high)<<1) | (((int)should_calibrate)<<2);
+		if (output_voltage_low || input_voltage_high || should_calibrate) {
+			// failsafe condition - possible battery disconnection?
+			stop_pwm_hw(motor_now);
 			dcdc_mode = DCDC_MODE_OFF;
+			last_mode_change_time = chVTGetSystemTimeX();
+		} else {
+			float duty;
+			duty = state_m->iq_pid_state.output / V_bus;
+			TIMER_UPDATE_DUTY_M1(duty * TIM1->ARR, 0,0);
+			if (!motor_now->m_output_on) {
+				start_pwm_hw(motor_now);
+			}
 		}
+
+
 	}
 
 #ifdef AD2S1205_SAMPLE_GPIO
@@ -2820,611 +2856,594 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
  *
  *
  */
-
-	if (motor_now->m_motor_released) {
-		conf_now->foc_offsets_current[0] += curr0*0.002;
-		conf_now->foc_offsets_current[1] += curr1*0.002;
-#ifdef HW_HAS_3_SHUNTS
-		conf_now->foc_offsets_current[2] += curr2*0.002;
-#endif
-	}
-
-	ADC_curr_norm_value[0 + norm_curr_ofs] = curr0;
-	ADC_curr_norm_value[1 + norm_curr_ofs] = curr1;
-#ifdef HW_HAS_3_SHUNTS
-	ADC_curr_norm_value[2 + norm_curr_ofs] = curr2;
-#else
-	ADC_curr_norm_value[2 + norm_curr_ofs] = -(ADC_curr_norm_value[0] + ADC_curr_norm_value[1]);
-#endif
-
-	// Use the best current samples depending on the modulation state.
-#ifdef HW_HAS_3_SHUNTS
-	if (conf_now->foc_sample_high_current) {
-		// High current sampling mode. Choose the lower currents to derive the highest one
-		// in order to be able to measure higher currents.
-		const float i0_abs = fabsf(ADC_curr_norm_value[0 + norm_curr_ofs]);
-		const float i1_abs = fabsf(ADC_curr_norm_value[1 + norm_curr_ofs]);
-		const float i2_abs = fabsf(ADC_curr_norm_value[2 + norm_curr_ofs]);
-
-		if (i0_abs > i1_abs && i0_abs > i2_abs) {
-			ADC_curr_norm_value[0 + norm_curr_ofs] = -(ADC_curr_norm_value[1 + norm_curr_ofs] + ADC_curr_norm_value[2 + norm_curr_ofs]);
-		} else if (i1_abs > i0_abs && i1_abs > i2_abs) {
-			ADC_curr_norm_value[1 + norm_curr_ofs] = -(ADC_curr_norm_value[0 + norm_curr_ofs] + ADC_curr_norm_value[2 + norm_curr_ofs]);
-		} else if (i2_abs > i0_abs && i2_abs > i1_abs) {
-			ADC_curr_norm_value[2 + norm_curr_ofs] = -(ADC_curr_norm_value[0 + norm_curr_ofs] + ADC_curr_norm_value[1 + norm_curr_ofs]);
-		}
-	} else {
-#ifdef HW_HAS_PHASE_SHUNTS
-		if (is_v7) {
-			if (tim->CCR1 > 500 && tim->CCR2 > 500) {
-				// Use the same 2 shunts on low modulation, as that will avoid jumps in the current reading.
-				// This is especially important when using HFI.
-				ADC_curr_norm_value[2 + norm_curr_ofs] = -(ADC_curr_norm_value[0 + norm_curr_ofs] + ADC_curr_norm_value[1 + norm_curr_ofs]);
-			} else {
-				if (tim->CCR1 < tim->CCR2 && tim->CCR1 < tim->CCR3) {
-					ADC_curr_norm_value[0 + norm_curr_ofs] = -(ADC_curr_norm_value[1 + norm_curr_ofs] + ADC_curr_norm_value[2 + norm_curr_ofs]);
-				} else if (tim->CCR2 < tim->CCR1 && tim->CCR2 < tim->CCR3) {
-					ADC_curr_norm_value[1 + norm_curr_ofs] = -(ADC_curr_norm_value[0 + norm_curr_ofs] + ADC_curr_norm_value[2 + norm_curr_ofs]);
-				} else if (tim->CCR3 < tim->CCR1 && tim->CCR3 < tim->CCR2) {
-					ADC_curr_norm_value[2 + norm_curr_ofs] = -(ADC_curr_norm_value[0 + norm_curr_ofs] + ADC_curr_norm_value[1 + norm_curr_ofs]);
-				}
-			}
-		} else {
-			if (tim->CCR1 < (tim->ARR - 500) && tim->CCR2 < (tim->ARR - 500)) {
-				// Use the same 2 shunts on low modulation, as that will avoid jumps in the current reading.
-				// This is especially important when using HFI.
-				ADC_curr_norm_value[2 + norm_curr_ofs] = -(ADC_curr_norm_value[0 + norm_curr_ofs] + ADC_curr_norm_value[1 + norm_curr_ofs]);
-			} else {
-				if (tim->CCR1 > tim->CCR2 && tim->CCR1 > tim->CCR3) {
-					ADC_curr_norm_value[0 + norm_curr_ofs] = -(ADC_curr_norm_value[1 + norm_curr_ofs] + ADC_curr_norm_value[2 + norm_curr_ofs]);
-				} else if (tim->CCR2 > tim->CCR1 && tim->CCR2 > tim->CCR3) {
-					ADC_curr_norm_value[1 + norm_curr_ofs] = -(ADC_curr_norm_value[0 + norm_curr_ofs] + ADC_curr_norm_value[2 + norm_curr_ofs]);
-				} else if (tim->CCR3 > tim->CCR1 && tim->CCR3 > tim->CCR2) {
-					ADC_curr_norm_value[2 + norm_curr_ofs] = -(ADC_curr_norm_value[0 + norm_curr_ofs] + ADC_curr_norm_value[1 + norm_curr_ofs]);
-				}
-			}
-		}
-#else
-		if (tim->CCR1 < (tim->ARR - 500) && tim->CCR2 < (tim->ARR - 500)) {
-			// Use the same 2 shunts on low modulation, as that will avoid jumps in the current reading.
-			// This is especially important when using HFI.
-			ADC_curr_norm_value[2 + norm_curr_ofs] = -(ADC_curr_norm_value[0 + norm_curr_ofs] + ADC_curr_norm_value[1 + norm_curr_ofs]);
-		} else {
-			if (tim->CCR1 > tim->CCR2 && tim->CCR1 > tim->CCR3) {
-				ADC_curr_norm_value[0 + norm_curr_ofs] = -(ADC_curr_norm_value[1 + norm_curr_ofs] + ADC_curr_norm_value[2 + norm_curr_ofs]);
-			} else if (tim->CCR2 > tim->CCR1 && tim->CCR2 > tim->CCR3) {
-				ADC_curr_norm_value[1 + norm_curr_ofs] = -(ADC_curr_norm_value[0 + norm_curr_ofs] + ADC_curr_norm_value[2 + norm_curr_ofs]);
-			} else if (tim->CCR3 > tim->CCR1 && tim->CCR3 > tim->CCR2) {
-				ADC_curr_norm_value[2 + norm_curr_ofs] = -(ADC_curr_norm_value[0 + norm_curr_ofs] + ADC_curr_norm_value[1 + norm_curr_ofs]);
-			}
-		}
-#endif
-	}
-#endif
-
-	float ia = ADC_curr_norm_value[0 + norm_curr_ofs] * FAC_CURRENT;
-	float ib = ADC_curr_norm_value[1 + norm_curr_ofs] * FAC_CURRENT;
-//	float ic = -(ia + ib);
-
-#ifdef HW_HAS_PHASE_SHUNTS
-	float dt;
-	if (conf_now->foc_sample_v0_v7) {
-		dt = 1.0 / conf_now->foc_f_zv;
-	} else {
-		dt = 1.0 / (conf_now->foc_f_zv / 2.0);
-	}
-#else
-	float dt = 1.0 / (conf_now->foc_f_zv / 2.0);
-#endif
-
-	// This has to be done for the skip function to have any chance at working with the
-	// observer and control loops.
-	// TODO: Test this.
-	dt *= (float)FOC_CONTROL_LOOP_FREQ_DIVIDER;
-
-	UTILS_LP_FAST(motor_now->m_motor_state.v_bus, GET_INPUT_VOLTAGE(), 0.1);
-
-	volatile float enc_ang = 0;
-	volatile bool encoder_is_being_used = false;
-
-	if (virtual_motor_is_connected()) {
-		if (conf_now->foc_sensor_mode == FOC_SENSOR_MODE_ENCODER ) {
-			enc_ang = virtual_motor_get_angle_deg();
-			encoder_is_being_used = true;
-		}
-	} else {
-		if (encoder_is_configured()) {
-			enc_ang = encoder_read_deg();
-			encoder_is_being_used = true;
-		}
-	}
-
-	if (encoder_is_being_used) {
-		float phase_tmp = enc_ang;
-		if (conf_now->foc_encoder_inverted) {
-			phase_tmp = 360.0 - phase_tmp;
-		}
-		phase_tmp *= conf_now->foc_encoder_ratio;
-		phase_tmp -= conf_now->foc_encoder_offset;
-		utils_norm_angle((float*)&phase_tmp);
-		motor_now->m_phase_now_encoder = DEG2RAD_f(phase_tmp);
-	}
-
-	if (motor_now->m_state == MC_STATE_RUNNING) {
-		// Clarke transform assuming balanced currents
-		motor_now->m_motor_state.i_alpha = ia;
-		motor_now->m_motor_state.i_beta = ONE_BY_SQRT3 * ia + TWO_BY_SQRT3 * ib;
-
-		motor_now->m_i_alpha_sample_with_offset = motor_now->m_motor_state.i_alpha;
-		motor_now->m_i_beta_sample_with_offset = motor_now->m_motor_state.i_beta;
-
-		if (motor_now->m_i_alpha_beta_has_offset) {
-			motor_now->m_motor_state.i_alpha = 0.5 * (motor_now->m_motor_state.i_alpha + motor_now->m_i_alpha_sample_next);
-			motor_now->m_motor_state.i_beta = 0.5 * (motor_now->m_motor_state.i_beta + motor_now->m_i_beta_sample_next);
-			motor_now->m_i_alpha_beta_has_offset = false;
-		}
-
-		const float duty_now = motor_now->m_motor_state.duty_now;
-		const float duty_abs = fabsf(duty_now);
-		const float vq_now = motor_now->m_motor_state.vq;
-		const float speed_fast_now = motor_now->m_pll_speed;
-
-		float id_set_tmp = motor_now->m_id_set;
-		float iq_set_tmp = motor_now->m_iq_set;
-		motor_now->m_motor_state.max_duty = conf_now->l_max_duty;
-
-		if (motor_now->m_control_mode == CONTROL_MODE_CURRENT_BRAKE) {
-			utils_truncate_number_abs(&iq_set_tmp, -conf_now->lo_current_min);
-		}
-
-		UTILS_LP_FAST(motor_now->m_duty_abs_filtered, duty_abs, 0.01);
-		utils_truncate_number_abs((float*)&motor_now->m_duty_abs_filtered, 1.0);
-
-		UTILS_LP_FAST(motor_now->m_duty_filtered, duty_now, 0.01);
-		utils_truncate_number_abs((float*)&motor_now->m_duty_filtered, 1.0);
-
-		float duty_set = motor_now->m_duty_cycle_set;
-		bool control_duty = motor_now->m_control_mode == CONTROL_MODE_DUTY ||
-				motor_now->m_control_mode == CONTROL_MODE_OPENLOOP_DUTY ||
-				motor_now->m_control_mode == CONTROL_MODE_OPENLOOP_DUTY_PHASE;
-
-		// Short all phases (duty=0) the moment the direction or modulation changes sign. That will avoid
-		// active braking or changing direction. Keep all phases shorted (duty == 0) until the
-		// braking current reaches the set or maximum value, then go back to current control
-		// mode. Stay in duty=0 for at least 10 cycles to avoid jumping in and out of that mode rapidly
-		// around the threshold.
-		if (motor_now->m_control_mode == CONTROL_MODE_CURRENT_BRAKE) {
-			if ((SIGN(speed_fast_now) != SIGN(motor_now->m_br_speed_before) ||
-					SIGN(vq_now) != SIGN(motor_now->m_br_vq_before) ||
-					fabsf(motor_now->m_duty_filtered) < 0.001 || motor_now->m_br_no_duty_samples < 10) &&
-					motor_now->m_motor_state.i_abs_filter < fabsf(iq_set_tmp)) {
-				control_duty = true;
-				duty_set = 0.0;
-				motor_now->m_br_no_duty_samples = 0;
-			} else if (motor_now->m_br_no_duty_samples < 10) {
-				control_duty = true;
-				duty_set = 0.0;
-				motor_now->m_br_no_duty_samples++;
-			}
-		} else {
-			motor_now->m_br_no_duty_samples = 0;
-		}
-
-		motor_now->m_br_speed_before = speed_fast_now;
-		motor_now->m_br_vq_before = vq_now;
-
-		// Brake when set ERPM is below min ERPM
-		if (motor_now->m_control_mode == CONTROL_MODE_SPEED &&
-				fabsf(motor_now->m_speed_pid_set_rpm) < conf_now->s_pid_min_erpm) {
-			control_duty = true;
-			duty_set = 0.0;
-		}
-
-		if (control_duty) {
- 			// Duty cycle control
-			float Vbus = motor_now->m_motor_state.v_bus;
-			float R = motor_now->m_conf->foc_motor_r;
-			float lambda = motor_now->m_conf->foc_motor_flux_linkage;
-			float elec_omega = motor_now->m_speed_est_fast;
-			iq_set_tmp = (duty_set*Vbus*ONE_BY_SQRT3 - elec_omega*lambda)/(R*1.5) * motor_now->m_conf->foc_duty_dowmramp_kp;
-		} else if (motor_now->m_control_mode == CONTROL_MODE_CURRENT_BRAKE) {
-			// Braking
-			iq_set_tmp = -SIGN(speed_fast_now) * fabsf(iq_set_tmp);
-		}
-
-		// Set motor phase
-		{
-			if (!motor_now->m_phase_override) {
-				foc_observer_update(motor_now->m_motor_state.v_alpha, motor_now->m_motor_state.v_beta,
-						motor_now->m_motor_state.i_alpha, motor_now->m_motor_state.i_beta,
-						dt, &(motor_now->m_observer_state), &motor_now->m_phase_now_observer, motor_now);
-
-				// Compensate from the phase lag caused by the switching frequency. This is important for motors
-				// that run on high ERPM compared to the switching frequency.
-				motor_now->m_phase_now_observer += motor_now->m_pll_speed * dt * (0.5 + conf_now->foc_observer_offset);
-				utils_norm_angle_rad((float*)&motor_now->m_phase_now_observer);
-			}
-
-			switch (conf_now->foc_sensor_mode) {
-			case FOC_SENSOR_MODE_ENCODER:
-				if (encoder_index_found() || virtual_motor_is_connected()) {
-					motor_now->m_motor_state.phase = foc_correct_encoder(
-							motor_now->m_phase_now_observer,
-							motor_now->m_phase_now_encoder,
-							motor_now->m_speed_est_fast,
-							conf_now->foc_sl_erpm,
-							motor_now);
-				} else {
-					// Rotate the motor in open loop if the index isn't found.
-					motor_now->m_motor_state.phase = motor_now->m_phase_now_encoder_no_index;
-				}
-
-				if (!motor_now->m_phase_override && motor_now->m_control_mode != CONTROL_MODE_OPENLOOP_PHASE) {
-					id_set_tmp = 0.0;
-				}
-				break;
-			case FOC_SENSOR_MODE_HALL:
-				motor_now->m_phase_now_observer = foc_correct_hall(motor_now->m_phase_now_observer, dt, motor_now,
-						utils_read_hall(motor_now != &m_motor_1, conf_now->m_hall_extra_samples));
-				motor_now->m_motor_state.phase = motor_now->m_phase_now_observer;
-
-				if (!motor_now->m_phase_override && motor_now->m_control_mode != CONTROL_MODE_OPENLOOP_PHASE) {
-					id_set_tmp = 0.0;
-				}
-				break;
-			case FOC_SENSOR_MODE_SENSORLESS:
-				if (motor_now->m_phase_observer_override) {
-					motor_now->m_motor_state.phase = motor_now->m_phase_now_observer_override;
-					motor_now->m_observer_state.x1 = motor_now->m_observer_x1_override;
-					motor_now->m_observer_state.x2 = motor_now->m_observer_x2_override;
-					iq_set_tmp += conf_now->foc_sl_openloop_boost_q * SIGN(iq_set_tmp);
-					if (conf_now->foc_sl_openloop_max_q > conf_now->cc_min_current) {
-						utils_truncate_number_abs(&iq_set_tmp, conf_now->foc_sl_openloop_max_q);
-					}
-				} else {
-					motor_now->m_motor_state.phase = motor_now->m_phase_now_observer;
-				}
-
-				if (!motor_now->m_phase_override && motor_now->m_control_mode != CONTROL_MODE_OPENLOOP_PHASE) {
-					id_set_tmp = 0.0;
-				}
-				break;
-
-			case FOC_SENSOR_MODE_HFI_START:
-				motor_now->m_motor_state.phase = motor_now->m_phase_now_observer;
-
-				if (motor_now->m_phase_observer_override) {
-					motor_now->m_hfi.est_done_cnt = 0;
-					motor_now->m_hfi.flip_cnt = 0;
-
-					motor_now->m_min_rpm_hyst_timer = 0.0;
-					motor_now->m_min_rpm_timer = 0.0;
-					motor_now->m_phase_observer_override = false;
-				}
-
-				if (!motor_now->m_phase_override && motor_now->m_control_mode != CONTROL_MODE_OPENLOOP_PHASE) {
-					id_set_tmp = 0.0;
-				}
-				break;
-
-			case FOC_SENSOR_MODE_HFI:
-			case FOC_SENSOR_MODE_HFI_V2:
-			case FOC_SENSOR_MODE_HFI_V3:
-			case FOC_SENSOR_MODE_HFI_V4:
-			case FOC_SENSOR_MODE_HFI_V5:
-				if (fabsf(RADPS2RPM_f(motor_now->m_speed_est_fast)) > conf_now->foc_sl_erpm_hfi) {
-					motor_now->m_hfi.observer_zero_time = 0;
-				} else {
-					motor_now->m_hfi.observer_zero_time += dt;
-				}
-
-				if (motor_now->m_hfi.observer_zero_time < conf_now->foc_hfi_obs_ovr_sec) {
-					motor_now->m_hfi.angle = motor_now->m_phase_now_observer;
-					motor_now->m_hfi.double_integrator = -motor_now->m_speed_est_fast;
-				}
-
-				motor_now->m_motor_state.phase = foc_correct_encoder(
-						motor_now->m_phase_now_observer,
-						motor_now->m_hfi.angle,
-						motor_now->m_speed_est_fast,
-						conf_now->foc_sl_erpm_hfi,
-						motor_now);
-
-				if (!motor_now->m_phase_override && motor_now->m_control_mode != CONTROL_MODE_OPENLOOP_PHASE) {
-					id_set_tmp = 0.0;
-				}
-				break;
-			}
-
-			if (motor_now->m_control_mode == CONTROL_MODE_HANDBRAKE) {
-				// Force the phase to 0 in handbrake mode so that the current simply locks the rotor.
-				motor_now->m_motor_state.phase = 0.0;
-			} else if (motor_now->m_control_mode == CONTROL_MODE_OPENLOOP ||
-					motor_now->m_control_mode == CONTROL_MODE_OPENLOOP_DUTY) {
-				motor_now->m_openloop_angle += dt * motor_now->m_openloop_speed;
-				utils_norm_angle_rad((float*)&motor_now->m_openloop_angle);
-				motor_now->m_motor_state.phase = motor_now->m_openloop_angle;
-			} else if (motor_now->m_control_mode == CONTROL_MODE_OPENLOOP_PHASE ||
-					motor_now->m_control_mode == CONTROL_MODE_OPENLOOP_DUTY_PHASE) {
-				motor_now->m_motor_state.phase = motor_now->m_openloop_phase;
-			}
-
-			if (motor_now->m_phase_override) {
-				motor_now->m_motor_state.phase = motor_now->m_phase_now_override;
-			}
-
-			utils_fast_sincos_better(motor_now->m_motor_state.phase,
-					(float*)&motor_now->m_motor_state.phase_sin,
-					(float*)&motor_now->m_motor_state.phase_cos);
-		}
-
-		// Apply MTPA. See: https://github.com/vedderb/bldc/pull/179
-		const float ld_lq_diff = conf_now->foc_motor_ld_lq_diff;
-		if (conf_now->foc_mtpa_mode != MTPA_MODE_OFF && ld_lq_diff != 0.0) {
-			const float lambda = conf_now->foc_motor_flux_linkage;
-
-			float iq_ref = iq_set_tmp;
-			if (conf_now->foc_mtpa_mode == MTPA_MODE_IQ_MEASURED) {
-				iq_ref = utils_min_abs(iq_set_tmp, motor_now->m_motor_state.iq_filter);
-			}
-
-			id_set_tmp = (lambda - sqrtf(SQ(lambda) + 8.0 * SQ(ld_lq_diff * iq_ref))) / (4.0 * ld_lq_diff);
-			iq_set_tmp = SIGN(iq_set_tmp) * sqrtf(SQ(iq_set_tmp) - SQ(id_set_tmp));
-		}
-
-		const float mod_q = motor_now->m_motor_state.mod_q_filter;
-
-		// Running FW from the 1 khz timer seems fast enough.
-//		run_fw(motor_now, dt);
-		id_set_tmp -= motor_now->m_i_fw_set;
-		iq_set_tmp -= SIGN(mod_q) * motor_now->m_i_fw_set * conf_now->foc_fw_q_current_factor;
-
-		// Apply current limits
-		// TODO: Consider D axis current for the input current as well. Currently this is done using
-		// l_in_current_map_start in update_override_limits.
-		if (mod_q > 0.001) {
-			utils_truncate_number(&iq_set_tmp, conf_now->lo_in_current_min / mod_q, conf_now->lo_in_current_max / mod_q);
-		} else if (mod_q < -0.001) {
-			utils_truncate_number(&iq_set_tmp, conf_now->lo_in_current_max / mod_q, conf_now->lo_in_current_min / mod_q);
-		}
-
-		if (mod_q > 0.0) {
-			utils_truncate_number(&iq_set_tmp, conf_now->lo_current_min, conf_now->lo_current_max);
-		} else {
-			utils_truncate_number(&iq_set_tmp, -conf_now->lo_current_max, -conf_now->lo_current_min);
-		}
-
-		float current_max_abs = fabsf(utils_max_abs(conf_now->lo_current_max, conf_now->lo_current_min));
-		utils_truncate_number_abs(&id_set_tmp, current_max_abs);
-		utils_truncate_number_abs(&iq_set_tmp, sqrtf(SQ(current_max_abs) - SQ(id_set_tmp)));
-
-		motor_now->m_motor_state.id_target = id_set_tmp;
-		motor_now->m_motor_state.iq_target = iq_set_tmp;
-
-		control_current(motor_now, dt);
-	} else {
-		// Motor is not running
-
-		// The current is 0 when the motor is undriven
-		motor_now->m_motor_state.i_alpha = 0.0;
-		motor_now->m_motor_state.i_beta = 0.0;
-		motor_now->m_motor_state.id = 0.0;
-		motor_now->m_motor_state.iq = 0.0;
-		motor_now->m_motor_state.id_filter = 0.0;
-		motor_now->m_motor_state.iq_filter = 0.0;
-#ifdef HW_HAS_INPUT_CURRENT_SENSOR
-		GET_INPUT_CURRENT_OFFSET(); // TODO: should this be done here?
-#endif
-		motor_now->m_motor_state.i_bus = 0.0;
-		motor_now->m_motor_state.i_abs = 0.0;
-		motor_now->m_motor_state.i_abs_filter = 0.0;
-
-		// Track back emf
-		update_valpha_vbeta(motor_now, 0.0, 0.0);
-
-		// Run observer
-		foc_observer_update(motor_now->m_motor_state.v_alpha, motor_now->m_motor_state.v_beta,
-						motor_now->m_motor_state.i_alpha, motor_now->m_motor_state.i_beta,
-						dt, &(motor_now->m_observer_state), 0, motor_now);
-		motor_now->m_phase_now_observer = utils_fast_atan2(motor_now->m_x2_prev + motor_now->m_observer_state.x2,
-														   motor_now->m_x1_prev + motor_now->m_observer_state.x1);
-
-		// The observer phase offset has to be added here as well, with 0.5 switching cycles offset
-		// compared to when running. Otherwise going from undriven to driven causes a current
-		// spike.
-		motor_now->m_phase_now_observer += motor_now->m_pll_speed * dt * conf_now->foc_observer_offset;
-		utils_norm_angle_rad((float*)&motor_now->m_phase_now_observer);
-
-		motor_now->m_x1_prev = motor_now->m_observer_state.x1;
-		motor_now->m_x2_prev = motor_now->m_observer_state.x2;
-
-		// Set motor phase
-		{
-			switch (conf_now->foc_sensor_mode) {
-			case FOC_SENSOR_MODE_ENCODER:
-				motor_now->m_motor_state.phase = foc_correct_encoder(
-						motor_now->m_phase_now_observer,
-						motor_now->m_phase_now_encoder,
-						motor_now->m_speed_est_fast,
-						conf_now->foc_sl_erpm,
-						motor_now);
-				break;
-			case FOC_SENSOR_MODE_HALL:
-				motor_now->m_phase_now_observer = foc_correct_hall(motor_now->m_phase_now_observer, dt, motor_now,
-						utils_read_hall(motor_now != &m_motor_1, conf_now->m_hall_extra_samples));
-				motor_now->m_motor_state.phase = motor_now->m_phase_now_observer;
-				break;
-			case FOC_SENSOR_MODE_SENSORLESS:
-				motor_now->m_motor_state.phase = motor_now->m_phase_now_observer;
-				break;
-			case FOC_SENSOR_MODE_HFI:
-			case FOC_SENSOR_MODE_HFI_V2:
-			case FOC_SENSOR_MODE_HFI_V3:
-			case FOC_SENSOR_MODE_HFI_V4:
-			case FOC_SENSOR_MODE_HFI_V5:
-			case FOC_SENSOR_MODE_HFI_START:{
-				motor_now->m_motor_state.phase = motor_now->m_phase_now_observer;
-				if (fabsf(RADPS2RPM_f(motor_now->m_pll_speed)) < (conf_now->foc_sl_erpm_hfi * 1.1)) {
-					motor_now->m_hfi.est_done_cnt = 0;
-					motor_now->m_hfi.flip_cnt = 0;
-				}
-			} break;
-
-			}
-
-			utils_fast_sincos_better(motor_now->m_motor_state.phase,
-					(float*)&motor_now->m_motor_state.phase_sin,
-					(float*)&motor_now->m_motor_state.phase_cos);
-		}
-
-		// HFI Restore
-#ifdef HW_HAS_DUAL_MOTORS
-		if (is_second_motor) {
-			CURRENT_FILTER_ON_M2();
-		} else {
-			CURRENT_FILTER_ON();
-		}
-#else
-		CURRENT_FILTER_ON();
-#endif
-
-		motor_now->m_hfi.ind = 0;
-		motor_now->m_hfi.ready = false;
-		motor_now->m_hfi.double_integrator = 0.0;
-		motor_now->m_hfi.is_samp_n = false;
-		motor_now->m_hfi.prev_sample = 0.0;
-		motor_now->m_hfi.angle = motor_now->m_motor_state.phase;
-
-		float s = motor_now->m_motor_state.phase_sin;
-		float c = motor_now->m_motor_state.phase_cos;
-
-		// Park transform
-		float vd_tmp = c * motor_now->m_motor_state.v_alpha + s * motor_now->m_motor_state.v_beta;
-		float vq_tmp = c * motor_now->m_motor_state.v_beta  - s * motor_now->m_motor_state.v_alpha;
-
-		UTILS_NAN_ZERO(motor_now->m_motor_state.vd);
-		UTILS_NAN_ZERO(motor_now->m_motor_state.vq);
-
-		UTILS_LP_FAST(motor_now->m_motor_state.vd, vd_tmp, 0.2);
-		UTILS_LP_FAST(motor_now->m_motor_state.vq, vq_tmp, 0.2);
-
-		// Set the current controller integrator to the BEMF voltage to avoid
-		// a current spike when the motor is driven again. Notice that we have
-		// to take decoupling into account.
-		motor_now->m_motor_state.id_pid_state.integrator = motor_now->m_motor_state.vd;
-		motor_now->m_motor_state.iq_pid_state.integrator = motor_now->m_motor_state.vq;
-
-		if (conf_now->foc_cc_decoupling == FOC_CC_DECOUPLING_BEMF ||
-				conf_now->foc_cc_decoupling == FOC_CC_DECOUPLING_CROSS_BEMF) {
-			motor_now->m_motor_state.iq_pid_state.integrator -= motor_now->m_pll_speed * conf_now->foc_motor_flux_linkage;
-		}
-
-		// Update corresponding modulation
-		/* voltage_normalize = 1/(2/3*V_bus) */
-		const float voltage_normalize = 1.5 / motor_now->m_motor_state.v_bus;
-
-		motor_now->m_motor_state.mod_d = motor_now->m_motor_state.vd * voltage_normalize;
-		motor_now->m_motor_state.mod_q = motor_now->m_motor_state.vq * voltage_normalize;
-		UTILS_NAN_ZERO(motor_now->m_motor_state.mod_q_filter);
-		UTILS_LP_FAST(motor_now->m_motor_state.mod_q_filter, motor_now->m_motor_state.mod_q, 0.2);
-		utils_truncate_number_abs((float*)&motor_now->m_motor_state.mod_q_filter, 1.0);
-	}
-
-	// Calculate duty cycle
-	motor_now->m_motor_state.duty_now = SIGN(motor_now->m_motor_state.vq) *
-			NORM2_f(motor_now->m_motor_state.mod_d, motor_now->m_motor_state.mod_q) * TWO_BY_SQRT3;
-
-	float phase_for_speed_est = 0.0;
-	switch (conf_now->foc_speed_soure) {
-	case FOC_SPEED_SRC_CORRECTED:
-		phase_for_speed_est = motor_now->m_motor_state.phase;
-		break;
-	case FOC_SPEED_SRC_OBSERVER:
-		phase_for_speed_est = motor_now->m_phase_now_observer;
-		break;
-	};
-
-	// Run PLL for speed estimation
-	foc_pll_run(phase_for_speed_est, dt, &motor_now->m_pll_phase, &motor_now->m_pll_speed, conf_now);
-
-	// Low latency speed estimation, for e.g. HFI and speed control.
-	{
-		float diff = utils_angle_difference_rad(phase_for_speed_est, motor_now->m_phase_before_speed_est);
-		utils_truncate_number(&diff, -M_PI / 3.0, M_PI / 3.0);
-
-		UTILS_LP_FAST(motor_now->m_speed_est_fast, diff / dt, 0.01);
-		UTILS_NAN_ZERO(motor_now->m_speed_est_fast);
-
-		UTILS_LP_FAST(motor_now->m_speed_est_faster, diff / dt, 0.2);
-		UTILS_NAN_ZERO(motor_now->m_speed_est_faster);
-
-		// pll wind-up protection
-		utils_truncate_number_abs((float*)&motor_now->m_pll_speed, fabsf(motor_now->m_speed_est_fast) * 3.0);
-
-		motor_now->m_phase_before_speed_est = phase_for_speed_est;
-	}
-
-	// Update tachometer (resolution = 60 deg as for BLDC)
-	float ph_tmp = motor_now->m_motor_state.phase;
-	utils_norm_angle_rad(&ph_tmp);
-	int step = (int)floorf((ph_tmp + M_PI) / (2.0 * M_PI) * 6.0);
-	utils_truncate_number_int(&step, 0, 5);
-	int diff = step - motor_now->m_tacho_step_last;
-	motor_now->m_tacho_step_last = step;
-
-	if (diff > 3) {
-		diff -= 6;
-	} else if (diff < -2) {
-		diff += 6;
-	}
-
-	motor_now->m_tachometer += diff;
-	motor_now->m_tachometer_abs += abs(diff);
-
-	// Track position control angle
-	float angle_now = 0.0;
-	if (encoder_is_configured()) {
-		if (conf_now->m_sensor_port_mode == SENSOR_PORT_MODE_TS5700N8501_MULTITURN) {
-			angle_now = encoder_read_deg_multiturn();
-		} else {
-			angle_now = enc_ang;
-		}
-	} else {
-		angle_now = RAD2DEG_f(motor_now->m_motor_state.phase);
-	}
-
-	utils_norm_angle(&angle_now);
-
-	if (conf_now->p_pid_ang_div > 0.98 && conf_now->p_pid_ang_div < 1.02) {
-		motor_now->m_pos_pid_now = angle_now;
-	} else {
-		if (angle_now < 90.0 && motor_now->m_pid_div_angle_last > 270.0) {
-			motor_now->m_pid_div_angle_accumulator += 360.0 / conf_now->p_pid_ang_div;
-			utils_norm_angle((float*)&motor_now->m_pid_div_angle_accumulator);
-		} else if (angle_now > 270.0 && motor_now->m_pid_div_angle_last < 90.0) {
-			motor_now->m_pid_div_angle_accumulator -= 360.0 / conf_now->p_pid_ang_div;
-			utils_norm_angle((float*)&motor_now->m_pid_div_angle_accumulator);
-		}
-
-		motor_now->m_pid_div_angle_last = angle_now;
-
-		motor_now->m_pos_pid_now = motor_now->m_pid_div_angle_accumulator + angle_now / conf_now->p_pid_ang_div;
-		utils_norm_angle((float*)&motor_now->m_pos_pid_now);
-	}
-
-#ifdef AD2S1205_SAMPLE_GPIO
-	// Release sample in the AD2S1205 resolver IC.
-	palSetPad(AD2S1205_SAMPLE_GPIO, AD2S1205_SAMPLE_PIN);
-#endif
-
-#ifdef HW_HAS_DUAL_MOTORS
-	mc_interface_mc_timer_isr(is_second_motor);
-#else
-	mc_interface_mc_timer_isr(false);
-#endif
-
-	m_isr_motor = 0;
-	m_last_adc_isr_duration = timer_seconds_elapsed_since(t_start);
+// 	UTILS_LP_FAST(motor_now->m_motor_state.v_bus, GET_INPUT_VOLTAGE(), 0.1);
+//
+// 	if (motor_now->m_motor_released) {
+// 		conf_now->foc_offsets_current[0] += curr0*0.002;
+// 		conf_now->foc_offsets_current[1] += curr1*0.002;
+// #ifdef HW_HAS_3_SHUNTS
+// 		conf_now->foc_offsets_current[2] += curr2*0.002;
+// #endif
+// 	}
+//
+// 	ADC_curr_norm_value[0 + norm_curr_ofs] = curr0;
+// 	ADC_curr_norm_value[1 + norm_curr_ofs] = curr1;
+// #ifdef HW_HAS_3_SHUNTS
+// 	ADC_curr_norm_value[2 + norm_curr_ofs] = curr2;
+// #else
+// 	ADC_curr_norm_value[2 + norm_curr_ofs] = -(ADC_curr_norm_value[0] + ADC_curr_norm_value[1]);
+// #endif
+//
+// 	// Use the best current samples depending on the modulation state.
+// #ifdef HW_HAS_3_SHUNTS
+// 	if (conf_now->foc_sample_high_current) {
+// 		// High current sampling mode. Choose the lower currents to derive the highest one
+// 		// in order to be able to measure higher currents.
+// 		const float i0_abs = fabsf(ADC_curr_norm_value[0 + norm_curr_ofs]);
+// 		const float i1_abs = fabsf(ADC_curr_norm_value[1 + norm_curr_ofs]);
+// 		const float i2_abs = fabsf(ADC_curr_norm_value[2 + norm_curr_ofs]);
+//
+// 		if (i0_abs > i1_abs && i0_abs > i2_abs) {
+// 			ADC_curr_norm_value[0 + norm_curr_ofs] = -(ADC_curr_norm_value[1 + norm_curr_ofs] + ADC_curr_norm_value[2 + norm_curr_ofs]);
+// 		} else if (i1_abs > i0_abs && i1_abs > i2_abs) {
+// 			ADC_curr_norm_value[1 + norm_curr_ofs] = -(ADC_curr_norm_value[0 + norm_curr_ofs] + ADC_curr_norm_value[2 + norm_curr_ofs]);
+// 		} else if (i2_abs > i0_abs && i2_abs > i1_abs) {
+// 			ADC_curr_norm_value[2 + norm_curr_ofs] = -(ADC_curr_norm_value[0 + norm_curr_ofs] + ADC_curr_norm_value[1 + norm_curr_ofs]);
+// 		}
+// 	} else {
+// #ifdef HW_HAS_PHASE_SHUNTS
+// 		if (is_v7) {
+// 			if (tim->CCR1 > 500 && tim->CCR2 > 500) {
+// 				// Use the same 2 shunts on low modulation, as that will avoid jumps in the current reading.
+// 				// This is especially important when using HFI.
+// 				ADC_curr_norm_value[2 + norm_curr_ofs] = -(ADC_curr_norm_value[0 + norm_curr_ofs] + ADC_curr_norm_value[1 + norm_curr_ofs]);
+// 			} else {
+// 				if (tim->CCR1 < tim->CCR2 && tim->CCR1 < tim->CCR3) {
+// 					ADC_curr_norm_value[0 + norm_curr_ofs] = -(ADC_curr_norm_value[1 + norm_curr_ofs] + ADC_curr_norm_value[2 + norm_curr_ofs]);
+// 				} else if (tim->CCR2 < tim->CCR1 && tim->CCR2 < tim->CCR3) {
+// 					ADC_curr_norm_value[1 + norm_curr_ofs] = -(ADC_curr_norm_value[0 + norm_curr_ofs] + ADC_curr_norm_value[2 + norm_curr_ofs]);
+// 				} else if (tim->CCR3 < tim->CCR1 && tim->CCR3 < tim->CCR2) {
+// 					ADC_curr_norm_value[2 + norm_curr_ofs] = -(ADC_curr_norm_value[0 + norm_curr_ofs] + ADC_curr_norm_value[1 + norm_curr_ofs]);
+// 				}
+// 			}
+// 		} else {
+// 			if (tim->CCR1 < (tim->ARR - 500) && tim->CCR2 < (tim->ARR - 500)) {
+// 				// Use the same 2 shunts on low modulation, as that will avoid jumps in the current reading.
+// 				// This is especially important when using HFI.
+// 				ADC_curr_norm_value[2 + norm_curr_ofs] = -(ADC_curr_norm_value[0 + norm_curr_ofs] + ADC_curr_norm_value[1 + norm_curr_ofs]);
+// 			} else {
+// 				if (tim->CCR1 > tim->CCR2 && tim->CCR1 > tim->CCR3) {
+// 					ADC_curr_norm_value[0 + norm_curr_ofs] = -(ADC_curr_norm_value[1 + norm_curr_ofs] + ADC_curr_norm_value[2 + norm_curr_ofs]);
+// 				} else if (tim->CCR2 > tim->CCR1 && tim->CCR2 > tim->CCR3) {
+// 					ADC_curr_norm_value[1 + norm_curr_ofs] = -(ADC_curr_norm_value[0 + norm_curr_ofs] + ADC_curr_norm_value[2 + norm_curr_ofs]);
+// 				} else if (tim->CCR3 > tim->CCR1 && tim->CCR3 > tim->CCR2) {
+// 					ADC_curr_norm_value[2 + norm_curr_ofs] = -(ADC_curr_norm_value[0 + norm_curr_ofs] + ADC_curr_norm_value[1 + norm_curr_ofs]);
+// 				}
+// 			}
+// 		}
+// #else
+// 		if (tim->CCR1 < (tim->ARR - 500) && tim->CCR2 < (tim->ARR - 500)) {
+// 			// Use the same 2 shunts on low modulation, as that will avoid jumps in the current reading.
+// 			// This is especially important when using HFI.
+// 			ADC_curr_norm_value[2 + norm_curr_ofs] = -(ADC_curr_norm_value[0 + norm_curr_ofs] + ADC_curr_norm_value[1 + norm_curr_ofs]);
+// 		} else {
+// 			if (tim->CCR1 > tim->CCR2 && tim->CCR1 > tim->CCR3) {
+// 				ADC_curr_norm_value[0 + norm_curr_ofs] = -(ADC_curr_norm_value[1 + norm_curr_ofs] + ADC_curr_norm_value[2 + norm_curr_ofs]);
+// 			} else if (tim->CCR2 > tim->CCR1 && tim->CCR2 > tim->CCR3) {
+// 				ADC_curr_norm_value[1 + norm_curr_ofs] = -(ADC_curr_norm_value[0 + norm_curr_ofs] + ADC_curr_norm_value[2 + norm_curr_ofs]);
+// 			} else if (tim->CCR3 > tim->CCR1 && tim->CCR3 > tim->CCR2) {
+// 				ADC_curr_norm_value[2 + norm_curr_ofs] = -(ADC_curr_norm_value[0 + norm_curr_ofs] + ADC_curr_norm_value[1 + norm_curr_ofs]);
+// 			}
+// 		}
+// #endif
+// 	}
+// #endif
+//
+// 	float ia = ADC_curr_norm_value[0 + norm_curr_ofs] * FAC_CURRENT;
+// 	float ib = ADC_curr_norm_value[1 + norm_curr_ofs] * FAC_CURRENT;
+// //	float ic = -(ia + ib);
+//
+// 	volatile float enc_ang = 0;
+// 	volatile bool encoder_is_being_used = false;
+//
+// 	if (virtual_motor_is_connected()) {
+// 		if (conf_now->foc_sensor_mode == FOC_SENSOR_MODE_ENCODER ) {
+// 			enc_ang = virtual_motor_get_angle_deg();
+// 			encoder_is_being_used = true;
+// 		}
+// 	} else {
+// 		if (encoder_is_configured()) {
+// 			enc_ang = encoder_read_deg();
+// 			encoder_is_being_used = true;
+// 		}
+// 	}
+//
+// 	if (encoder_is_being_used) {
+// 		float phase_tmp = enc_ang;
+// 		if (conf_now->foc_encoder_inverted) {
+// 			phase_tmp = 360.0 - phase_tmp;
+// 		}
+// 		phase_tmp *= conf_now->foc_encoder_ratio;
+// 		phase_tmp -= conf_now->foc_encoder_offset;
+// 		utils_norm_angle((float*)&phase_tmp);
+// 		motor_now->m_phase_now_encoder = DEG2RAD_f(phase_tmp);
+// 	}
+//
+// 	if (motor_now->m_state == MC_STATE_RUNNING) {
+// 		// Clarke transform assuming balanced currents
+// 		motor_now->m_motor_state.i_alpha = ia;
+// 		motor_now->m_motor_state.i_beta = ONE_BY_SQRT3 * ia + TWO_BY_SQRT3 * ib;
+//
+// 		motor_now->m_i_alpha_sample_with_offset = motor_now->m_motor_state.i_alpha;
+// 		motor_now->m_i_beta_sample_with_offset = motor_now->m_motor_state.i_beta;
+//
+// 		if (motor_now->m_i_alpha_beta_has_offset) {
+// 			motor_now->m_motor_state.i_alpha = 0.5 * (motor_now->m_motor_state.i_alpha + motor_now->m_i_alpha_sample_next);
+// 			motor_now->m_motor_state.i_beta = 0.5 * (motor_now->m_motor_state.i_beta + motor_now->m_i_beta_sample_next);
+// 			motor_now->m_i_alpha_beta_has_offset = false;
+// 		}
+//
+// 		const float duty_now = motor_now->m_motor_state.duty_now;
+// 		const float duty_abs = fabsf(duty_now);
+// 		const float vq_now = motor_now->m_motor_state.vq;
+// 		const float speed_fast_now = motor_now->m_pll_speed;
+//
+// 		float id_set_tmp = motor_now->m_id_set;
+// 		float iq_set_tmp = motor_now->m_iq_set;
+// 		motor_now->m_motor_state.max_duty = conf_now->l_max_duty;
+//
+// 		if (motor_now->m_control_mode == CONTROL_MODE_CURRENT_BRAKE) {
+// 			utils_truncate_number_abs(&iq_set_tmp, -conf_now->lo_current_min);
+// 		}
+//
+// 		UTILS_LP_FAST(motor_now->m_duty_abs_filtered, duty_abs, 0.01);
+// 		utils_truncate_number_abs((float*)&motor_now->m_duty_abs_filtered, 1.0);
+//
+// 		UTILS_LP_FAST(motor_now->m_duty_filtered, duty_now, 0.01);
+// 		utils_truncate_number_abs((float*)&motor_now->m_duty_filtered, 1.0);
+//
+// 		float duty_set = motor_now->m_duty_cycle_set;
+// 		bool control_duty = motor_now->m_control_mode == CONTROL_MODE_DUTY ||
+// 				motor_now->m_control_mode == CONTROL_MODE_OPENLOOP_DUTY ||
+// 				motor_now->m_control_mode == CONTROL_MODE_OPENLOOP_DUTY_PHASE;
+//
+// 		// Short all phases (duty=0) the moment the direction or modulation changes sign. That will avoid
+// 		// active braking or changing direction. Keep all phases shorted (duty == 0) until the
+// 		// braking current reaches the set or maximum value, then go back to current control
+// 		// mode. Stay in duty=0 for at least 10 cycles to avoid jumping in and out of that mode rapidly
+// 		// around the threshold.
+// 		if (motor_now->m_control_mode == CONTROL_MODE_CURRENT_BRAKE) {
+// 			if ((SIGN(speed_fast_now) != SIGN(motor_now->m_br_speed_before) ||
+// 					SIGN(vq_now) != SIGN(motor_now->m_br_vq_before) ||
+// 					fabsf(motor_now->m_duty_filtered) < 0.001 || motor_now->m_br_no_duty_samples < 10) &&
+// 					motor_now->m_motor_state.i_abs_filter < fabsf(iq_set_tmp)) {
+// 				control_duty = true;
+// 				duty_set = 0.0;
+// 				motor_now->m_br_no_duty_samples = 0;
+// 			} else if (motor_now->m_br_no_duty_samples < 10) {
+// 				control_duty = true;
+// 				duty_set = 0.0;
+// 				motor_now->m_br_no_duty_samples++;
+// 			}
+// 		} else {
+// 			motor_now->m_br_no_duty_samples = 0;
+// 		}
+//
+// 		motor_now->m_br_speed_before = speed_fast_now;
+// 		motor_now->m_br_vq_before = vq_now;
+//
+// 		// Brake when set ERPM is below min ERPM
+// 		if (motor_now->m_control_mode == CONTROL_MODE_SPEED &&
+// 				fabsf(motor_now->m_speed_pid_set_rpm) < conf_now->s_pid_min_erpm) {
+// 			control_duty = true;
+// 			duty_set = 0.0;
+// 		}
+//
+// 		if (control_duty) {
+//  			// Duty cycle control
+// 			float Vbus = motor_now->m_motor_state.v_bus;
+// 			float R = motor_now->m_conf->foc_motor_r;
+// 			float lambda = motor_now->m_conf->foc_motor_flux_linkage;
+// 			float elec_omega = motor_now->m_speed_est_fast;
+// 			iq_set_tmp = (duty_set*Vbus*ONE_BY_SQRT3 - elec_omega*lambda)/(R*1.5) * motor_now->m_conf->foc_duty_dowmramp_kp;
+// 		} else if (motor_now->m_control_mode == CONTROL_MODE_CURRENT_BRAKE) {
+// 			// Braking
+// 			iq_set_tmp = -SIGN(speed_fast_now) * fabsf(iq_set_tmp);
+// 		}
+//
+// 		// Set motor phase
+// 		{
+// 			if (!motor_now->m_phase_override) {
+// 				foc_observer_update(motor_now->m_motor_state.v_alpha, motor_now->m_motor_state.v_beta,
+// 						motor_now->m_motor_state.i_alpha, motor_now->m_motor_state.i_beta,
+// 						dt, &(motor_now->m_observer_state), &motor_now->m_phase_now_observer, motor_now);
+//
+// 				// Compensate from the phase lag caused by the switching frequency. This is important for motors
+// 				// that run on high ERPM compared to the switching frequency.
+// 				motor_now->m_phase_now_observer += motor_now->m_pll_speed * dt * (0.5 + conf_now->foc_observer_offset);
+// 				utils_norm_angle_rad((float*)&motor_now->m_phase_now_observer);
+// 			}
+//
+// 			switch (conf_now->foc_sensor_mode) {
+// 			case FOC_SENSOR_MODE_ENCODER:
+// 				if (encoder_index_found() || virtual_motor_is_connected()) {
+// 					motor_now->m_motor_state.phase = foc_correct_encoder(
+// 							motor_now->m_phase_now_observer,
+// 							motor_now->m_phase_now_encoder,
+// 							motor_now->m_speed_est_fast,
+// 							conf_now->foc_sl_erpm,
+// 							motor_now);
+// 				} else {
+// 					// Rotate the motor in open loop if the index isn't found.
+// 					motor_now->m_motor_state.phase = motor_now->m_phase_now_encoder_no_index;
+// 				}
+//
+// 				if (!motor_now->m_phase_override && motor_now->m_control_mode != CONTROL_MODE_OPENLOOP_PHASE) {
+// 					id_set_tmp = 0.0;
+// 				}
+// 				break;
+// 			case FOC_SENSOR_MODE_HALL:
+// 				motor_now->m_phase_now_observer = foc_correct_hall(motor_now->m_phase_now_observer, dt, motor_now,
+// 						utils_read_hall(motor_now != &m_motor_1, conf_now->m_hall_extra_samples));
+// 				motor_now->m_motor_state.phase = motor_now->m_phase_now_observer;
+//
+// 				if (!motor_now->m_phase_override && motor_now->m_control_mode != CONTROL_MODE_OPENLOOP_PHASE) {
+// 					id_set_tmp = 0.0;
+// 				}
+// 				break;
+// 			case FOC_SENSOR_MODE_SENSORLESS:
+// 				if (motor_now->m_phase_observer_override) {
+// 					motor_now->m_motor_state.phase = motor_now->m_phase_now_observer_override;
+// 					motor_now->m_observer_state.x1 = motor_now->m_observer_x1_override;
+// 					motor_now->m_observer_state.x2 = motor_now->m_observer_x2_override;
+// 					iq_set_tmp += conf_now->foc_sl_openloop_boost_q * SIGN(iq_set_tmp);
+// 					if (conf_now->foc_sl_openloop_max_q > conf_now->cc_min_current) {
+// 						utils_truncate_number_abs(&iq_set_tmp, conf_now->foc_sl_openloop_max_q);
+// 					}
+// 				} else {
+// 					motor_now->m_motor_state.phase = motor_now->m_phase_now_observer;
+// 				}
+//
+// 				if (!motor_now->m_phase_override && motor_now->m_control_mode != CONTROL_MODE_OPENLOOP_PHASE) {
+// 					id_set_tmp = 0.0;
+// 				}
+// 				break;
+//
+// 			case FOC_SENSOR_MODE_HFI_START:
+// 				motor_now->m_motor_state.phase = motor_now->m_phase_now_observer;
+//
+// 				if (motor_now->m_phase_observer_override) {
+// 					motor_now->m_hfi.est_done_cnt = 0;
+// 					motor_now->m_hfi.flip_cnt = 0;
+//
+// 					motor_now->m_min_rpm_hyst_timer = 0.0;
+// 					motor_now->m_min_rpm_timer = 0.0;
+// 					motor_now->m_phase_observer_override = false;
+// 				}
+//
+// 				if (!motor_now->m_phase_override && motor_now->m_control_mode != CONTROL_MODE_OPENLOOP_PHASE) {
+// 					id_set_tmp = 0.0;
+// 				}
+// 				break;
+//
+// 			case FOC_SENSOR_MODE_HFI:
+// 			case FOC_SENSOR_MODE_HFI_V2:
+// 			case FOC_SENSOR_MODE_HFI_V3:
+// 			case FOC_SENSOR_MODE_HFI_V4:
+// 			case FOC_SENSOR_MODE_HFI_V5:
+// 				if (fabsf(RADPS2RPM_f(motor_now->m_speed_est_fast)) > conf_now->foc_sl_erpm_hfi) {
+// 					motor_now->m_hfi.observer_zero_time = 0;
+// 				} else {
+// 					motor_now->m_hfi.observer_zero_time += dt;
+// 				}
+//
+// 				if (motor_now->m_hfi.observer_zero_time < conf_now->foc_hfi_obs_ovr_sec) {
+// 					motor_now->m_hfi.angle = motor_now->m_phase_now_observer;
+// 					motor_now->m_hfi.double_integrator = -motor_now->m_speed_est_fast;
+// 				}
+//
+// 				motor_now->m_motor_state.phase = foc_correct_encoder(
+// 						motor_now->m_phase_now_observer,
+// 						motor_now->m_hfi.angle,
+// 						motor_now->m_speed_est_fast,
+// 						conf_now->foc_sl_erpm_hfi,
+// 						motor_now);
+//
+// 				if (!motor_now->m_phase_override && motor_now->m_control_mode != CONTROL_MODE_OPENLOOP_PHASE) {
+// 					id_set_tmp = 0.0;
+// 				}
+// 				break;
+// 			}
+//
+// 			if (motor_now->m_control_mode == CONTROL_MODE_HANDBRAKE) {
+// 				// Force the phase to 0 in handbrake mode so that the current simply locks the rotor.
+// 				motor_now->m_motor_state.phase = 0.0;
+// 			} else if (motor_now->m_control_mode == CONTROL_MODE_OPENLOOP ||
+// 					motor_now->m_control_mode == CONTROL_MODE_OPENLOOP_DUTY) {
+// 				motor_now->m_openloop_angle += dt * motor_now->m_openloop_speed;
+// 				utils_norm_angle_rad((float*)&motor_now->m_openloop_angle);
+// 				motor_now->m_motor_state.phase = motor_now->m_openloop_angle;
+// 			} else if (motor_now->m_control_mode == CONTROL_MODE_OPENLOOP_PHASE ||
+// 					motor_now->m_control_mode == CONTROL_MODE_OPENLOOP_DUTY_PHASE) {
+// 				motor_now->m_motor_state.phase = motor_now->m_openloop_phase;
+// 			}
+//
+// 			if (motor_now->m_phase_override) {
+// 				motor_now->m_motor_state.phase = motor_now->m_phase_now_override;
+// 			}
+//
+// 			utils_fast_sincos_better(motor_now->m_motor_state.phase,
+// 					(float*)&motor_now->m_motor_state.phase_sin,
+// 					(float*)&motor_now->m_motor_state.phase_cos);
+// 		}
+//
+// 		// Apply MTPA. See: https://github.com/vedderb/bldc/pull/179
+// 		const float ld_lq_diff = conf_now->foc_motor_ld_lq_diff;
+// 		if (conf_now->foc_mtpa_mode != MTPA_MODE_OFF && ld_lq_diff != 0.0) {
+// 			const float lambda = conf_now->foc_motor_flux_linkage;
+//
+// 			float iq_ref = iq_set_tmp;
+// 			if (conf_now->foc_mtpa_mode == MTPA_MODE_IQ_MEASURED) {
+// 				iq_ref = utils_min_abs(iq_set_tmp, motor_now->m_motor_state.iq_filter);
+// 			}
+//
+// 			id_set_tmp = (lambda - sqrtf(SQ(lambda) + 8.0 * SQ(ld_lq_diff * iq_ref))) / (4.0 * ld_lq_diff);
+// 			iq_set_tmp = SIGN(iq_set_tmp) * sqrtf(SQ(iq_set_tmp) - SQ(id_set_tmp));
+// 		}
+//
+// 		const float mod_q = motor_now->m_motor_state.mod_q_filter;
+//
+// 		// Running FW from the 1 khz timer seems fast enough.
+// //		run_fw(motor_now, dt);
+// 		id_set_tmp -= motor_now->m_i_fw_set;
+// 		iq_set_tmp -= SIGN(mod_q) * motor_now->m_i_fw_set * conf_now->foc_fw_q_current_factor;
+//
+// 		// Apply current limits
+// 		// TODO: Consider D axis current for the input current as well. Currently this is done using
+// 		// l_in_current_map_start in update_override_limits.
+// 		if (mod_q > 0.001) {
+// 			utils_truncate_number(&iq_set_tmp, conf_now->lo_in_current_min / mod_q, conf_now->lo_in_current_max / mod_q);
+// 		} else if (mod_q < -0.001) {
+// 			utils_truncate_number(&iq_set_tmp, conf_now->lo_in_current_max / mod_q, conf_now->lo_in_current_min / mod_q);
+// 		}
+//
+// 		if (mod_q > 0.0) {
+// 			utils_truncate_number(&iq_set_tmp, conf_now->lo_current_min, conf_now->lo_current_max);
+// 		} else {
+// 			utils_truncate_number(&iq_set_tmp, -conf_now->lo_current_max, -conf_now->lo_current_min);
+// 		}
+//
+// 		float current_max_abs = fabsf(utils_max_abs(conf_now->lo_current_max, conf_now->lo_current_min));
+// 		utils_truncate_number_abs(&id_set_tmp, current_max_abs);
+// 		utils_truncate_number_abs(&iq_set_tmp, sqrtf(SQ(current_max_abs) - SQ(id_set_tmp)));
+//
+// 		motor_now->m_motor_state.id_target = id_set_tmp;
+// 		motor_now->m_motor_state.iq_target = iq_set_tmp;
+//
+// 		control_current(motor_now, dt);
+// 	} else {
+// 		// Motor is not running
+//
+// 		// The current is 0 when the motor is undriven
+// 		motor_now->m_motor_state.i_alpha = 0.0;
+// 		motor_now->m_motor_state.i_beta = 0.0;
+// 		motor_now->m_motor_state.id = 0.0;
+// 		motor_now->m_motor_state.iq = 0.0;
+// 		motor_now->m_motor_state.id_filter = 0.0;
+// 		motor_now->m_motor_state.iq_filter = 0.0;
+// #ifdef HW_HAS_INPUT_CURRENT_SENSOR
+// 		GET_INPUT_CURRENT_OFFSET(); // TODO: should this be done here?
+// #endif
+// 		motor_now->m_motor_state.i_bus = 0.0;
+// 		motor_now->m_motor_state.i_abs = 0.0;
+// 		motor_now->m_motor_state.i_abs_filter = 0.0;
+//
+// 		// Track back emf
+// 		update_valpha_vbeta(motor_now, 0.0, 0.0);
+//
+// 		// Run observer
+// 		foc_observer_update(motor_now->m_motor_state.v_alpha, motor_now->m_motor_state.v_beta,
+// 						motor_now->m_motor_state.i_alpha, motor_now->m_motor_state.i_beta,
+// 						dt, &(motor_now->m_observer_state), 0, motor_now);
+// 		motor_now->m_phase_now_observer = utils_fast_atan2(motor_now->m_x2_prev + motor_now->m_observer_state.x2,
+// 														   motor_now->m_x1_prev + motor_now->m_observer_state.x1);
+//
+// 		// The observer phase offset has to be added here as well, with 0.5 switching cycles offset
+// 		// compared to when running. Otherwise going from undriven to driven causes a current
+// 		// spike.
+// 		motor_now->m_phase_now_observer += motor_now->m_pll_speed * dt * conf_now->foc_observer_offset;
+// 		utils_norm_angle_rad((float*)&motor_now->m_phase_now_observer);
+//
+// 		motor_now->m_x1_prev = motor_now->m_observer_state.x1;
+// 		motor_now->m_x2_prev = motor_now->m_observer_state.x2;
+//
+// 		// Set motor phase
+// 		{
+// 			switch (conf_now->foc_sensor_mode) {
+// 			case FOC_SENSOR_MODE_ENCODER:
+// 				motor_now->m_motor_state.phase = foc_correct_encoder(
+// 						motor_now->m_phase_now_observer,
+// 						motor_now->m_phase_now_encoder,
+// 						motor_now->m_speed_est_fast,
+// 						conf_now->foc_sl_erpm,
+// 						motor_now);
+// 				break;
+// 			case FOC_SENSOR_MODE_HALL:
+// 				motor_now->m_phase_now_observer = foc_correct_hall(motor_now->m_phase_now_observer, dt, motor_now,
+// 						utils_read_hall(motor_now != &m_motor_1, conf_now->m_hall_extra_samples));
+// 				motor_now->m_motor_state.phase = motor_now->m_phase_now_observer;
+// 				break;
+// 			case FOC_SENSOR_MODE_SENSORLESS:
+// 				motor_now->m_motor_state.phase = motor_now->m_phase_now_observer;
+// 				break;
+// 			case FOC_SENSOR_MODE_HFI:
+// 			case FOC_SENSOR_MODE_HFI_V2:
+// 			case FOC_SENSOR_MODE_HFI_V3:
+// 			case FOC_SENSOR_MODE_HFI_V4:
+// 			case FOC_SENSOR_MODE_HFI_V5:
+// 			case FOC_SENSOR_MODE_HFI_START:{
+// 				motor_now->m_motor_state.phase = motor_now->m_phase_now_observer;
+// 				if (fabsf(RADPS2RPM_f(motor_now->m_pll_speed)) < (conf_now->foc_sl_erpm_hfi * 1.1)) {
+// 					motor_now->m_hfi.est_done_cnt = 0;
+// 					motor_now->m_hfi.flip_cnt = 0;
+// 				}
+// 			} break;
+//
+// 			}
+//
+// 			utils_fast_sincos_better(motor_now->m_motor_state.phase,
+// 					(float*)&motor_now->m_motor_state.phase_sin,
+// 					(float*)&motor_now->m_motor_state.phase_cos);
+// 		}
+//
+// 		// HFI Restore
+// #ifdef HW_HAS_DUAL_MOTORS
+// 		if (is_second_motor) {
+// 			CURRENT_FILTER_ON_M2();
+// 		} else {
+// 			CURRENT_FILTER_ON();
+// 		}
+// #else
+// 		CURRENT_FILTER_ON();
+// #endif
+//
+// 		motor_now->m_hfi.ind = 0;
+// 		motor_now->m_hfi.ready = false;
+// 		motor_now->m_hfi.double_integrator = 0.0;
+// 		motor_now->m_hfi.is_samp_n = false;
+// 		motor_now->m_hfi.prev_sample = 0.0;
+// 		motor_now->m_hfi.angle = motor_now->m_motor_state.phase;
+//
+// 		float s = motor_now->m_motor_state.phase_sin;
+// 		float c = motor_now->m_motor_state.phase_cos;
+//
+// 		// Park transform
+// 		float vd_tmp = c * motor_now->m_motor_state.v_alpha + s * motor_now->m_motor_state.v_beta;
+// 		float vq_tmp = c * motor_now->m_motor_state.v_beta  - s * motor_now->m_motor_state.v_alpha;
+//
+// 		UTILS_NAN_ZERO(motor_now->m_motor_state.vd);
+// 		UTILS_NAN_ZERO(motor_now->m_motor_state.vq);
+//
+// 		UTILS_LP_FAST(motor_now->m_motor_state.vd, vd_tmp, 0.2);
+// 		UTILS_LP_FAST(motor_now->m_motor_state.vq, vq_tmp, 0.2);
+//
+// 		// Set the current controller integrator to the BEMF voltage to avoid
+// 		// a current spike when the motor is driven again. Notice that we have
+// 		// to take decoupling into account.
+// 		motor_now->m_motor_state.id_pid_state.integrator = motor_now->m_motor_state.vd;
+// 		motor_now->m_motor_state.iq_pid_state.integrator = motor_now->m_motor_state.vq;
+//
+// 		if (conf_now->foc_cc_decoupling == FOC_CC_DECOUPLING_BEMF ||
+// 				conf_now->foc_cc_decoupling == FOC_CC_DECOUPLING_CROSS_BEMF) {
+// 			motor_now->m_motor_state.iq_pid_state.integrator -= motor_now->m_pll_speed * conf_now->foc_motor_flux_linkage;
+// 		}
+//
+// 		// Update corresponding modulation
+// 		/* voltage_normalize = 1/(2/3*V_bus) */
+// 		const float voltage_normalize = 1.5 / motor_now->m_motor_state.v_bus;
+//
+// 		motor_now->m_motor_state.mod_d = motor_now->m_motor_state.vd * voltage_normalize;
+// 		motor_now->m_motor_state.mod_q = motor_now->m_motor_state.vq * voltage_normalize;
+// 		UTILS_NAN_ZERO(motor_now->m_motor_state.mod_q_filter);
+// 		UTILS_LP_FAST(motor_now->m_motor_state.mod_q_filter, motor_now->m_motor_state.mod_q, 0.2);
+// 		utils_truncate_number_abs((float*)&motor_now->m_motor_state.mod_q_filter, 1.0);
+// 	}
+//
+// 	// Calculate duty cycle
+// 	motor_now->m_motor_state.duty_now = SIGN(motor_now->m_motor_state.vq) *
+// 			NORM2_f(motor_now->m_motor_state.mod_d, motor_now->m_motor_state.mod_q) * TWO_BY_SQRT3;
+//
+// 	float phase_for_speed_est = 0.0;
+// 	switch (conf_now->foc_speed_soure) {
+// 	case FOC_SPEED_SRC_CORRECTED:
+// 		phase_for_speed_est = motor_now->m_motor_state.phase;
+// 		break;
+// 	case FOC_SPEED_SRC_OBSERVER:
+// 		phase_for_speed_est = motor_now->m_phase_now_observer;
+// 		break;
+// 	};
+//
+// 	// Run PLL for speed estimation
+// 	foc_pll_run(phase_for_speed_est, dt, &motor_now->m_pll_phase, &motor_now->m_pll_speed, conf_now);
+//
+// 	// Low latency speed estimation, for e.g. HFI and speed control.
+// 	{
+// 		float diff = utils_angle_difference_rad(phase_for_speed_est, motor_now->m_phase_before_speed_est);
+// 		utils_truncate_number(&diff, -M_PI / 3.0, M_PI / 3.0);
+//
+// 		UTILS_LP_FAST(motor_now->m_speed_est_fast, diff / dt, 0.01);
+// 		UTILS_NAN_ZERO(motor_now->m_speed_est_fast);
+//
+// 		UTILS_LP_FAST(motor_now->m_speed_est_faster, diff / dt, 0.2);
+// 		UTILS_NAN_ZERO(motor_now->m_speed_est_faster);
+//
+// 		// pll wind-up protection
+// 		utils_truncate_number_abs((float*)&motor_now->m_pll_speed, fabsf(motor_now->m_speed_est_fast) * 3.0);
+//
+// 		motor_now->m_phase_before_speed_est = phase_for_speed_est;
+// 	}
+//
+// 	// Update tachometer (resolution = 60 deg as for BLDC)
+// 	float ph_tmp = motor_now->m_motor_state.phase;
+// 	utils_norm_angle_rad(&ph_tmp);
+// 	int step = (int)floorf((ph_tmp + M_PI) / (2.0 * M_PI) * 6.0);
+// 	utils_truncate_number_int(&step, 0, 5);
+// 	int diff = step - motor_now->m_tacho_step_last;
+// 	motor_now->m_tacho_step_last = step;
+//
+// 	if (diff > 3) {
+// 		diff -= 6;
+// 	} else if (diff < -2) {
+// 		diff += 6;
+// 	}
+//
+// 	motor_now->m_tachometer += diff;
+// 	motor_now->m_tachometer_abs += abs(diff);
+//
+// 	// Track position control angle
+// 	float angle_now = 0.0;
+// 	if (encoder_is_configured()) {
+// 		if (conf_now->m_sensor_port_mode == SENSOR_PORT_MODE_TS5700N8501_MULTITURN) {
+// 			angle_now = encoder_read_deg_multiturn();
+// 		} else {
+// 			angle_now = enc_ang;
+// 		}
+// 	} else {
+// 		angle_now = RAD2DEG_f(motor_now->m_motor_state.phase);
+// 	}
+//
+// 	utils_norm_angle(&angle_now);
+//
+// 	if (conf_now->p_pid_ang_div > 0.98 && conf_now->p_pid_ang_div < 1.02) {
+// 		motor_now->m_pos_pid_now = angle_now;
+// 	} else {
+// 		if (angle_now < 90.0 && motor_now->m_pid_div_angle_last > 270.0) {
+// 			motor_now->m_pid_div_angle_accumulator += 360.0 / conf_now->p_pid_ang_div;
+// 			utils_norm_angle((float*)&motor_now->m_pid_div_angle_accumulator);
+// 		} else if (angle_now > 270.0 && motor_now->m_pid_div_angle_last < 90.0) {
+// 			motor_now->m_pid_div_angle_accumulator -= 360.0 / conf_now->p_pid_ang_div;
+// 			utils_norm_angle((float*)&motor_now->m_pid_div_angle_accumulator);
+// 		}
+//
+// 		motor_now->m_pid_div_angle_last = angle_now;
+//
+// 		motor_now->m_pos_pid_now = motor_now->m_pid_div_angle_accumulator + angle_now / conf_now->p_pid_ang_div;
+// 		utils_norm_angle((float*)&motor_now->m_pos_pid_now);
+// 	}
+//
+// #ifdef AD2S1205_SAMPLE_GPIO
+// 	// Release sample in the AD2S1205 resolver IC.
+// 	palSetPad(AD2S1205_SAMPLE_GPIO, AD2S1205_SAMPLE_PIN);
+// #endif
+//
+// #ifdef HW_HAS_DUAL_MOTORS
+// 	mc_interface_mc_timer_isr(is_second_motor);
+// #else
+// 	mc_interface_mc_timer_isr(false);
+// #endif
+//
+// 	m_isr_motor = 0;
+// 	m_last_adc_isr_duration = timer_seconds_elapsed_since(t_start);
 }
 
 // Private functions
@@ -3461,14 +3480,14 @@ static void timer_update(motor_all_state_t *motor, float dt) {
 			min_current = 0.001;
 		}
 
-		if (fabsf(motor->m_iq_set) < min_current &&
-				fabsf(motor->m_id_set) < min_current &&
-				motor->m_i_fw_set < min_current &&
-				motor->m_current_off_delay < dt) {
-			motor->m_control_mode = CONTROL_MODE_NONE;
-			motor->m_state = MC_STATE_OFF;
-			stop_pwm_hw(motor);
-		}
+// 		if (fabsf(motor->m_iq_set) < min_current &&
+// 				fabsf(motor->m_id_set) < min_current &&
+// 				motor->m_i_fw_set < min_current &&
+// 				motor->m_current_off_delay < dt) {
+// 			motor->m_control_mode = CONTROL_MODE_NONE;
+// 			motor->m_state = MC_STATE_OFF;
+// 			stop_pwm_hw(motor);
+// 		}
 	}
 	utils_sys_unlock_cnt();
 
@@ -3667,6 +3686,13 @@ static void timer_update(motor_all_state_t *motor, float dt) {
 
 		utils_truncate_number((float*)&motor->m_r_est_state, conf_now->foc_motor_r * 0.25, conf_now->foc_motor_r * 3.0);
 	}
+}
+
+static void terminal_print_msgs(int argc, const char **argv) {
+	(void)argc;
+	(void)argv;
+
+	commands_printf("Va=%f\nVbus=%f\nff=%f\noutput=%f\ncurr=%f\ncurr_avg=%f\nlast_stop=%f\nmode=%f\ntime_since_mode_change=%f\n", (double)g_Va, (double)g_Vbus, (double)g_ff, (double)g_output, (double)g_current, (double)g_current_avg,(double)g_last_stop_reason,(double)g_mode,(double)g_time_since_mode_change);
 }
 
 static void terminal_tmp(int argc, const char **argv) {
