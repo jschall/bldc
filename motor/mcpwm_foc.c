@@ -2546,7 +2546,7 @@ void mcpwm_foc_tim_sample_int_handler(void) {
 	}
 }
 
-float g_Va, g_Vbus, g_output, g_ff, g_last_stop_reason, g_current, g_current_avg, g_mode, g_time_since_mode_change;
+float g_Va, g_Vbus, g_output, g_ff, g_last_stop_reason, g_current, g_current_avg, g_mode, g_time_since_mode_change, g_dt;
 
 void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 	(void)p;
@@ -2691,7 +2691,7 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
  *
  */
 
-	UTILS_LP_FAST(motor_now->m_motor_state.v_bus, GET_INPUT_VOLTAGE(), 0.1);
+	UTILS_LP_FAST(motor_now->m_motor_state.v_bus, GET_INPUT_VOLTAGE(), 1);
 
 	volatile float *ofs_volt = conf_now->foc_offsets_voltage_undriven;
 	if (motor_now->m_state == MC_STATE_RUNNING) {
@@ -2734,7 +2734,7 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 #endif
 
 	g_Va = Va;
-	g_current = curr0;
+	g_current = curr0*FAC_CURRENT;
 	UTILS_LP_FAST(g_current_avg, g_current, 0.02);
 
 
@@ -2766,6 +2766,8 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 #endif
 
 	dt *= (float)FOC_CONTROL_LOOP_FREQ_DIVIDER;
+
+	g_dt = dt;
 
 	static systime_t last_mode_change_time;
 	static uint8_t dcdc_mode = DCDC_MODE_OFF;
@@ -2827,7 +2829,9 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 		} else {
 			float duty;
 			duty = state_m->iq_pid_state.output / V_bus;
-			TIMER_UPDATE_DUTY_M1(duty * TIM1->ARR, 0,0);
+			static bool toggle;
+			toggle = !toggle;
+			TIMER_UPDATE_DUTY_M1(duty * TIM1->ARR, 0,toggle?TIM1->ARR:0);
 			if (!motor_now->m_output_on) {
 				start_pwm_hw(motor_now);
 			}
@@ -3692,7 +3696,7 @@ static void terminal_print_msgs(int argc, const char **argv) {
 	(void)argc;
 	(void)argv;
 
-	commands_printf("Va=%f\nVbus=%f\nff=%f\noutput=%f\ncurr=%f\ncurr_avg=%f\nlast_stop=%f\nmode=%f\ntime_since_mode_change=%f\n", (double)g_Va, (double)g_Vbus, (double)g_ff, (double)g_output, (double)g_current, (double)g_current_avg,(double)g_last_stop_reason,(double)g_mode,(double)g_time_since_mode_change);
+	commands_printf("Va=%f\nVbus=%f\nff=%f\noutput=%f\ncurr=%f\ncurr_avg=%f\nlast_stop=%f\nmode=%f\ntime_since_mode_change=%f\ndt=%f\n", (double)g_Va, (double)g_Vbus, (double)g_ff, (double)g_output, (double)g_current, (double)g_current_avg,(double)g_last_stop_reason,(double)g_mode,(double)g_time_since_mode_change,(double)g_dt);
 }
 
 static void terminal_tmp(int argc, const char **argv) {

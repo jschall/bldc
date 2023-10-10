@@ -22,10 +22,10 @@
 #define MCCONF_L_CURRENT_MIN -60
 
 // Battery Current Max
-#define MCCONF_L_IN_CURRENT_MAX 133.33
+#define MCCONF_L_IN_CURRENT_MAX 120
 
 // Battery Current Max Regen
-#define MCCONF_L_IN_CURRENT_MIN -133.33
+#define MCCONF_L_IN_CURRENT_MIN -120
 
 // Input Current Limit Map Start
 #define MCCONF_L_IN_CURRENT_MAP_START 1
@@ -55,7 +55,7 @@
 #define MCCONF_L_MIN_VOLTAGE 12
 
 // Maximum Input Voltage
-#define MCCONF_L_MAX_VOLTAGE 84
+#define MCCONF_L_MAX_VOLTAGE 57
 
 // Battery Voltage Cutoff Start
 #define MCCONF_L_BATTERY_CUT_START 0
@@ -157,13 +157,13 @@
 #define MCCONF_HALL_ERPM 2000
 
 // Current KP
-#define MCCONF_FOC_CURRENT_KP 0.15
+#define MCCONF_FOC_CURRENT_KP 0.3
 
 // Current KI
-#define MCCONF_FOC_CURRENT_KI 15
+#define MCCONF_FOC_CURRENT_KI 2000
 
 // Zero Vector Frequency
-#define MCCONF_FOC_F_ZV 30000
+#define MCCONF_FOC_F_ZV 150000
 
 // Dead Time Compensation
 #define MCCONF_FOC_DT_US 0.12
@@ -205,7 +205,7 @@
 #define MCCONF_FOC_OBSERVER_GAIN_SLOW 0.05
 
 // Observer Offset
-#define MCCONF_FOC_OBSERVER_OFFSET 0
+#define MCCONF_FOC_OBSERVER_OFFSET -1
 
 // Duty Downramp Kp
 #define MCCONF_FOC_DUTY_DOWNRAMP_KP 1
@@ -337,25 +337,25 @@
 #define MCCONF_FOC_HFI_SAMPLES 1
 
 // Run calibration at boot
-#define MCCONF_FOC_OFFSETS_CAL_ON_BOOT 1
+#define MCCONF_FOC_OFFSETS_CAL_ON_BOOT 0
 
 // Current Offset 0
-#define MCCONF_FOC_OFFSETS_CURRENT_0 2040.24
+#define MCCONF_FOC_OFFSETS_CURRENT_0 2042.85
 
 // Current Offset 1
-#define MCCONF_FOC_OFFSETS_CURRENT_1 2039.84
+#define MCCONF_FOC_OFFSETS_CURRENT_1 2050.8
 
 // Current Offset 2
-#define MCCONF_FOC_OFFSETS_CURRENT_2 2042.68
+#define MCCONF_FOC_OFFSETS_CURRENT_2 2044.94
 
 // Voltage Offset 0
-#define MCCONF_FOC_OFFSETS_VOLTAGE_0 0.006
+#define MCCONF_FOC_OFFSETS_VOLTAGE_0 0.507
 
 // Voltage Offset 1
-#define MCCONF_FOC_OFFSETS_VOLTAGE_1 -0.0082
+#define MCCONF_FOC_OFFSETS_VOLTAGE_1 -0.2533
 
 // Voltage Offset 2
-#define MCCONF_FOC_OFFSETS_VOLTAGE_2 0.0021
+#define MCCONF_FOC_OFFSETS_VOLTAGE_2 -0.2536
 
 // Voltage Offset Undriven 0
 #define MCCONF_FOC_OFFSETS_VOLTAGE_UNDRIVEN_0 0
