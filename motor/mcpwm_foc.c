@@ -2806,7 +2806,7 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 			last_mode_change_time = chVTGetSystemTimeX();
 		}
 	} else if (dcdc_mode == DCDC_MODE_RUNNING) {
-		state_m->iq_pid_param.i_ref = -2;
+		state_m->iq_pid_param.i_ref = -3;
 // 		utils_truncate_number_abs(&state_m->iq_pid_param.i_ref, 1);
 		state_m->iq_pid_param.i_meas = curr0*FAC_CURRENT;
 		state_m->iq_pid_param.dt = dt;
