@@ -2747,7 +2747,7 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 
 #define INPUT_BATT_CELLS 8
 #define OUTPUT_BATT_CELLS 6
-#define INPUT_BATT_VOLTAGE_MAX (4.2*INPUT_BATT_CELLS) // input voltage higher than this causes instantaneous shutdown - possible disconnection of input battery
+#define INPUT_BATT_VOLTAGE_MAX (4.1*INPUT_BATT_CELLS) // input voltage higher than this causes instantaneous shutdown - possible disconnection of input battery or charging complete
 #define INPUT_BATT_VOLTAGE_TARGET (4.0*INPUT_BATT_CELLS) // input voltage must be below this value for startup to occur and current setpoint will be adjusted to target this voltage
 #define OUTPUT_BATT_VOLTAGE_MIN (2.5*OUTPUT_BATT_CELLS) // output voltage below this value causes shutdown - possible disconnection of output battery
 #define OUTPUT_BATT_VOLTAGE_MIN_START (3.0*OUTPUT_BATT_CELLS) // output voltage must be above this value for startup to occur
