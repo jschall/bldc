@@ -2745,8 +2745,8 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 // "output" is the battery connected to the VESC's phase A
 // note that this code is intended to charge the input by drawing current from the output
 
-#define INPUT_BATT_CELLS 6
-#define OUTPUT_BATT_CELLS 4
+#define INPUT_BATT_CELLS 8
+#define OUTPUT_BATT_CELLS 6
 #define INPUT_BATT_VOLTAGE_MAX (4.2*INPUT_BATT_CELLS) // input voltage higher than this causes instantaneous shutdown - possible disconnection of input battery
 #define INPUT_BATT_VOLTAGE_TARGET (4.0*INPUT_BATT_CELLS) // input voltage must be below this value for startup to occur and current setpoint will be adjusted to target this voltage
 #define OUTPUT_BATT_VOLTAGE_MIN (2.5*OUTPUT_BATT_CELLS) // output voltage below this value causes shutdown - possible disconnection of output battery
@@ -2829,9 +2829,7 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 		} else {
 			float duty;
 			duty = state_m->iq_pid_state.output / V_bus;
-			static bool toggle;
-			toggle = !toggle;
-			TIMER_UPDATE_DUTY_M1(duty * TIM1->ARR, 0,toggle?TIM1->ARR:0);
+			TIMER_UPDATE_DUTY_M1(duty * TIM1->ARR,0,0);
 			if (!motor_now->m_output_on) {
 				start_pwm_hw(motor_now);
 			}
