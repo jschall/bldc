@@ -709,17 +709,14 @@ static void handle_esc_raw_command(CanardInstance* ins, CanardRxTransfer* transf
 						}
 						break;
 
-					case UAVCAN_RAW_MODE_DUTY:
-						if (raw_val == 0) {
-							mc_interface_set_pid_pos(180);
-						} else {
-							// scale so that max duty is always 48v regardless of input voltage
-							float corrected_val = raw_val * 48/mc_interface_get_input_voltage_filtered();
-							utils_truncate_number_abs(&corrected_val,1.0);
+					case UAVCAN_RAW_MODE_DUTY: {
+						// scale so that max duty is always 18v regardless of input voltage
+						float corrected_val = raw_val * 18/mc_interface_get_input_voltage_filtered();
+						utils_truncate_number_abs(&corrected_val,1.0);
 
-							mc_interface_set_duty(corrected_val);
-						}
+						mc_interface_set_duty(corrected_val);
 						break;
+					}
 
 					case UAVCAN_RAW_MODE_RPM:
 						mc_interface_set_pid_speed(raw_val * conf->uavcan_raw_rpm_max);
