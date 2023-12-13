@@ -2851,10 +2851,12 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 					motor_now->m_motor_state.i_abs_filter < fabsf(iq_set_tmp)) {
 				control_duty = true;
 				duty_set = 0.0;
+				motor_now->m_motor_state.max_duty = 0;
 				motor_now->m_br_no_duty_samples = 0;
 			} else if (motor_now->m_br_no_duty_samples < 10) {
 				control_duty = true;
 				duty_set = 0.0;
+				motor_now->m_motor_state.max_duty = 0;
 				motor_now->m_br_no_duty_samples++;
 			}
 		} else {
@@ -3975,7 +3977,12 @@ static void control_current(motor_all_state_t *motor, float dt) {
 	//float max_v_mag = ONE_BY_SQRT3 * max_duty * state_m->v_bus;
 	state_m->id_pid_param.output_limit = ONE_BY_SQRT3 * max_duty * state_m->v_bus;
 	curr_pid_run(&state_m->id_pid_param, &state_m->id_pid_state);
-	state_m->iq_pid_param.output_limit = sqrtf(SQ(state_m->id_pid_param.output_limit) - SQ(state_m->id_pid_state.output));
+	float iq_output_limit_squared = SQ(state_m->id_pid_param.output_limit) - SQ(state_m->id_pid_state.output);
+
+	state_m->iq_pid_param.output_limit = 0;
+	if (iq_output_limit_squared > 0) {
+		state_m->iq_pid_param.output_limit = sqrtf(iq_output_limit_squared);
+	}
 	curr_pid_run(&state_m->iq_pid_param, &state_m->iq_pid_state);
 
 	// mod_d and mod_q are normalized such that 1 corresponds to the max possible voltage:
@@ -4227,6 +4234,12 @@ static void control_current(motor_all_state_t *motor, float dt) {
 	// Calculate the duty cycles for all the phases. This also injects a zero modulation signal to
 	// be able to fully utilize the bus voltage. See https://microchipdeveloper.com/mct5001:start
 	foc_svm(state_m->mod_alpha_raw, state_m->mod_beta_raw, top, &duty1, &duty2, &duty3, (uint32_t*)&state_m->svm_sector);
+
+	if (max_duty == 0) {
+		duty1=0;
+		duty2=0;
+		duty3=0;
+	}
 
 	if (motor == &m_motor_1) {
 		TIMER_UPDATE_DUTY_M1(duty1, duty2, duty3);
